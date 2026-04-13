@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Yol Arkadaşım - Topluluk Akışı</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed-dim": "#ffb77d",
+                    "on-primary-fixed": "#001a40",
+                    "inverse-on-surface": "#f0f1f1",
+                    "tertiary-container": "#983c00",
+                    "on-primary-container": "#bbd0ff",
+                    "surface-variant": "#e2e2e2",
+                    "on-tertiary-container": "#ffc2a7",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed": "#2f1500",
+                    "on-secondary-fixed-variant": "#6e3900",
+                    "tertiary": "#722b00",
+                    "tertiary-fixed-dim": "#ffb694",
+                    "surface-container-high": "#e8e8e8",
+                    "surface-tint": "#115cb9",
+                    "on-background": "#1a1c1c",
+                    "background": "#f9f9f9",
+                    "error": "#ba1a1a",
+                    "surface-container-highest": "#e2e2e2",
+                    "surface-container": "#eeeeee",
+                    "surface-container-low": "#f3f3f3",
+                    "surface-dim": "#dadada",
+                    "secondary-container": "#fd8b00",
+                    "on-secondary-container": "#603100",
+                    "surface": "#f9f9f9",
+                    "on-tertiary": "#ffffff",
+                    "outline": "#727784",
+                    "outline-variant": "#c2c6d4",
+                    "on-surface-variant": "#424752",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffdbcc",
+                    "on-surface": "#1a1c1c",
+                    "on-primary": "#ffffff",
+                    "surface-bright": "#f9f9f9",
+                    "inverse-surface": "#2f3131",
+                    "on-tertiary-fixed": "#351000",
+                    "inverse-primary": "#acc7ff",
+                    "on-tertiary-fixed-variant": "#7b2f00",
+                    "primary-container": "#0056b3",
+                    "on-error": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#904d00",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-fixed": "#d7e2ff",
+                    "primary": "#003f87",
+                    "on-primary-fixed-variant": "#004491",
+                    "secondary-fixed": "#ffdcc3",
+                    "primary-fixed-dim": "#acc7ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface antialiased">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#f9f9f9] dark:bg-[#2f3131] shadow-[0_8px_32px_rgba(26,28,28,0.08)] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-4">
+<button class="text-[#003f87] dark:text-[#ffffff] hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-2xl" data-icon="search">search</span>
+</button>
+<h1 class="font-['Inter'] font-bold text-3xl tracking-tight text-[#003f87] dark:text-[#ffffff]">Yol Arkadaşım</h1>
+</div>
+<button class="text-[#003f87] dark:text-[#ffffff] hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-2xl" data-icon="emergency_home">emergency_home</span>
+</button>
+</header>
+<!-- Horizon Indicator (Traffic Pulse) -->
+<div class="fixed top-[72px] left-0 w-full h-1 z-40 bg-gradient-to-r from-primary via-secondary to-primary opacity-80"></div>
+<main class="pt-24 pb-32 px-4 max-w-2xl mx-auto">
+<!-- Tab Navigation (Editorial Style) -->
+<div class="mb-8 overflow-x-auto hide-scrollbar -mx-4 px-4">
+<div class="flex space-x-3 items-center">
+<button class="bg-primary text-on-primary px-6 py-2.5 rounded-full font-bold text-sm tracking-wide shadow-lg">Hepsi</button>
+<button class="bg-surface-container-low text-on-surface-variant px-6 py-2.5 rounded-full font-semibold text-sm hover:bg-surface-container-high transition-colors whitespace-nowrap">Trafik</button>
+<button class="bg-surface-container-low text-on-surface-variant px-6 py-2.5 rounded-full font-semibold text-sm hover:bg-surface-container-high transition-colors whitespace-nowrap">Sınır Durumu</button>
+<button class="bg-surface-container-low text-on-surface-variant px-6 py-2.5 rounded-full font-semibold text-sm hover:bg-surface-container-high transition-colors whitespace-nowrap">Yardım Talepleri</button>
+</div>
+</div>
+<!-- Community Feed -->
+<div class="space-y-6">
+<!-- Post 1: Border Status (Glassmorphism / Editorial) -->
+<article class="bg-surface-container-lowest rounded-[2rem] p-6 shadow-[0_8px_32px_rgba(26,28,28,0.04)] relative overflow-hidden">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<img alt="Profile" class="w-12 h-12 rounded-2xl object-cover border-2 border-surface-container-low" data-alt="close-up portrait of a professional driver with a friendly expression, soft cinematic lighting, neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCow1L0risK0XSUOJo54lFaqIsHTuUqa5dbsB3V0esc2LArfzrj3qitaOYEYLJrhjVOgT7YJdR6C7vLPt_UEkyc8hk7H4Ytsr3X0mgWWQNzlX0lWUKEOxB4nFqGex8-w3EKnpKqXdTKTRhxJHjE8iBeJ3doKqAnYTDhzvEqlSH8er-Ukll3jp-qMYWRgNHm6kxQ0R7wpxMoSx6-zLtykLycPf3nYjAuPGWWwpldaKRuyjN9B42poP9WJVCEyNI573216A5Gnoe8e_3N"/>
+<div>
+<h3 class="font-bold text-on-surface leading-tight">Mert Yılmaz</h3>
+<p class="text-xs font-medium text-on-surface-variant uppercase tracking-wider">2dk önce • Kuzey Geçişi</p>
+</div>
+</div>
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">DURUM GÜNCELLEMESİ</span>
+</div>
+<p class="text-on-surface-variant text-lg font-medium leading-relaxed mb-4">Kuzey Sınırı'ndaki bekleme süresi şerit kapanması nedeniyle 45 dakikaya çıktı. Acele ediyorsanız Doğu sapağını kullanmanızı öneririm.</p>
+<!-- Location Chip -->
+<div class="flex items-center gap-2 bg-surface-container-low w-fit px-3 py-1.5 rounded-xl mb-4">
+<span class="material-symbols-outlined text-primary text-sm" data-icon="location_on">location_on</span>
+<span class="text-xs font-bold text-primary">A-24 Otoyolu, 4. Sektör</span>
+</div>
+<!-- Interaction Bar -->
+<div class="flex items-center justify-between pt-4 border-t border-surface-container">
+<div class="flex items-center gap-4">
+<button class="flex items-center gap-2 text-primary font-bold text-sm hover:bg-primary-fixed px-3 py-2 rounded-xl transition-colors"><span class="material-symbols-outlined text-lg" data-icon="thumb_up">thumb_up</span> Faydalı (14)</button>
+<button class="flex items-center gap-2 text-on-surface-variant font-bold text-sm hover:bg-surface-container-high px-3 py-2 rounded-xl transition-colors"><span class="material-symbols-outlined text-lg" data-icon="report">report</span> Spam</button>
+</div>
+<button class="text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+</div>
+</article>
+<!-- Post 2: Traffic Visual Report (Heads-up Display Style) -->
+<article class="bg-surface-container-lowest rounded-[2rem] overflow-hidden shadow-[0_8px_32px_rgba(26,28,28,0.04)]">
+<div class="relative h-56 bg-surface-dim">
+<img alt="Traffic" class="w-full h-full object-cover" data-alt="busy highway at dusk with long exposure car light trails, cinematic blue and orange tones, high contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrDENE8cmBq086GI6IQhDkp1OZDJC3lKRwZx7Gc04xCGcelGSIS2U9a0Wyq84-PfEzV_TNKe1QFK8tw8tnEoZKh5VfuTUr6U4YGFdCvkZPv2YciDKF1JRkncd0UGmTwKEGlyiyWrWJIFKN1myiMFjgTEuFYvvXVaimexcDTfk4cQNGDwq4xeWaFC4satRbcnOs8bJ7tBZs7O2GChi5hnjGqOcpjsFbejJWwnqWAl0kzSxGdD5t73SSsU35smnzKKXAuYjouSzdCTmd"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+<div class="absolute bottom-4 left-6 text-white">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-secondary" data-icon="warning">warning</span>
+<span class="text-sm font-bold tracking-wide">YOĞUN TRAFİK</span>
+</div>
+<p class="text-xs opacity-80">Sarah J. tarafından paylaşıldı • 15dk önce</p>
+</div>
+</div>
+<div class="p-6">
+<p class="text-on-surface-variant font-medium leading-relaxed mb-4">5. çıkış yakınında büyük zincirleme kaza. Tüm şeritler şu an kapalı. Acil servisler olay yerinde.</p>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-4">
+<button class="flex items-center gap-2 text-primary font-bold text-sm px-3 py-2 rounded-xl"><span class="material-symbols-outlined text-lg" data-icon="thumb_up">thumb_up</span> Faydalı (42)</button>
+<button class="flex items-center gap-2 text-on-surface-variant font-bold text-sm px-3 py-2 rounded-xl"><span class="material-symbols-outlined text-lg" data-icon="report">report</span> Spam</button>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="more_horiz">more_horiz</span>
+</div>
+</div>
+</article>
+<!-- Post 3: Help Request (Safety Amber Highlighting) -->
+<article class="bg-surface-container-lowest border-l-4 border-secondary rounded-r-[2rem] rounded-l-lg p-6 shadow-[0_8px_32px_rgba(26,28,28,0.04)]">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-12 h-12 bg-secondary/10 rounded-2xl flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary text-2xl" data-icon="emergency" data-weight="fill">emergency</span>
+</div>
+<div>
+<h3 class="font-bold text-on-surface leading-tight">Yardım Talebi</h3>
+<p class="text-xs font-medium text-secondary uppercase tracking-widest">ŞU AN AKTİF • 2 MİL UZAKTA</p>
+</div>
+</div>
+<p class="text-on-surface font-semibold text-xl mb-4">Lastiğim patladı ve yedeğim yok. Yakınlarda kompakt bir SUV için krikosu olan var mı?</p>
+<div class="flex gap-2 mb-6">
+<span class="bg-secondary/10 text-secondary px-3 py-1.5 rounded-lg text-xs font-bold">#Yolyardım</span>
+<span class="bg-secondary/10 text-secondary px-3 py-1.5 rounded-lg text-xs font-bold">#Acil</span>
+</div>
+<div class="flex items-center justify-between pt-4 border-t border-surface-container">
+<button class="bg-primary text-on-primary px-8 py-3 rounded-2xl font-black text-sm tracking-tight flex items-center gap-2 hover:opacity-90 transition-opacity"><span class="material-symbols-outlined" data-icon="chat">chat</span> YARDIM EDEBİLİRİM</button>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-lg" data-icon="history">history</span>
+<span class="text-[10px] font-bold uppercase">SÜRE: 30dk</span>
+</div>
+</div>
+</article>
+</div>
+</main>
+<!-- FAB: Add Report (Mandatory Execution) -->
+<button class="fixed bottom-24 right-6 z-50 w-16 h-16 rounded-3xl bg-gradient-to-br from-[#003f87] to-[#0056b3] text-white shadow-2xl flex items-center justify-center transform active:scale-90 transition-all">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</button>
+<!-- BottomNavBar (The Anchor) -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-[#ffffff]/80 dark:bg-[#2f3131]/80 backdrop-blur-3xl rounded-t-3xl z-50 shadow-[0_-8px_32px_rgba(26,28,28,0.08)]">
+<!-- Map Tab -->
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl mb-1" data-icon="explore">explore</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Harita</span>
+</a>
+<!-- Community Tab (ACTIVE) -->
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-[#003f87] to-[#0056b3] text-white rounded-xl px-6 py-2 transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl mb-1" data-icon="groups" data-weight="fill">groups</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Topluluk</span>
+</a>
+<!-- Profile Tab -->
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 transition-all duration-300" href="#">
+<span class="material-symbols-outlined text-2xl mb-1" data-icon="person">person</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Profil</span>
+</a>
+</nav>
+</body></html>

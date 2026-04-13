@@ -1,0 +1,18 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API + WebSocket (Gruppenchat / Walkie)
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+
+	# React SPA
+	handle {
+		reverse_proxy web:80
+	}
+}

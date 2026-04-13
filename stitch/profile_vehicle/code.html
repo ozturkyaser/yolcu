@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Sentinel - Profil &amp; Araç</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed-dim": "#ffb77d",
+                    "on-primary-fixed": "#001a40",
+                    "inverse-on-surface": "#f0f1f1",
+                    "tertiary-container": "#983c00",
+                    "on-primary-container": "#bbd0ff",
+                    "surface-variant": "#e2e2e2",
+                    "on-tertiary-container": "#ffc2a7",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed": "#2f1500",
+                    "on-secondary-fixed-variant": "#6e3900",
+                    "tertiary": "#722b00",
+                    "tertiary-fixed-dim": "#ffb694",
+                    "surface-container-high": "#e8e8e8",
+                    "surface-tint": "#115cb9",
+                    "on-background": "#1a1c1c",
+                    "background": "#f9f9f9",
+                    "error": "#ba1a1a",
+                    "surface-container-highest": "#e2e2e2",
+                    "surface-container": "#eeeeee",
+                    "surface-container-low": "#f3f3f3",
+                    "surface-dim": "#dadada",
+                    "secondary-container": "#fd8b00",
+                    "on-secondary-container": "#603100",
+                    "surface": "#f9f9f9",
+                    "on-tertiary": "#ffffff",
+                    "outline": "#727784",
+                    "outline-variant": "#c2c6d4",
+                    "on-surface-variant": "#424752",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffdbcc",
+                    "on-surface": "#1a1c1c",
+                    "on-primary": "#ffffff",
+                    "surface-bright": "#f9f9f9",
+                    "inverse-surface": "#2f3131",
+                    "on-tertiary-fixed": "#351000",
+                    "inverse-primary": "#acc7ff",
+                    "on-tertiary-fixed-variant": "#7b2f00",
+                    "primary-container": "#0056b3",
+                    "on-error": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#904d00",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-fixed": "#d7e2ff",
+                    "primary": "#003f87",
+                    "on-primary-fixed-variant": "#004491",
+                    "secondary-fixed": "#ffdcc3",
+                    "primary-fixed-dim": "#acc7ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface mb-32">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#f9f9f9] dark:bg-[#2f3131] shadow-[0_8px_32px_rgba(26,28,28,0.08)] flex justify-between items-center px-6 py-4">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[#003f87] dark:text-[#ffffff] transition-transform scale-95 active:scale-90" data-icon="search">search</span>
+<h1 class="font-['Inter'] font-bold text-3xl tracking-tight text-[#003f87] dark:text-[#ffffff]">The Sentinel</h1>
+</div>
+<span class="material-symbols-outlined text-[#dadada] dark:text-[#dadada] hover:opacity-80 transition-opacity" data-icon="emergency_home">emergency_home</span>
+</header>
+<main class="mt-24 px-6 max-w-4xl mx-auto">
+<!-- Profile Header Section -->
+<section class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-12">
+<div class="md:col-span-4 flex flex-col items-center md:items-start">
+<div class="w-32 h-32 rounded-full overflow-hidden mb-4 ring-4 ring-primary-container shadow-2xl">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="portrait of a professional driver in a clean white shirt with a focused and friendly expression, warm natural sunlight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMTSRsojNmoXrwava-61-H_YmhvpN5dhs4NB5-kz9nBX4K3bwHyXM0DSswuq_fCyPQ0lkXfMWeLAc8FsynKa-aR19WfWWOEJYFrtjvPWGDkAQQRAI34HwvUYVy5jQeH8rxVnEbh8xEwmod5h0EZ49kYfyL19pjdAvivO418EIlz7TKHNxQir4NzR8hiT1Ip2ZOvq4l9r5YQHWc8f4NXw_0bC6I4yGp7mR6jdihm6g0IsnTnpz2M2PeTdstx0oJp9PkVFqkqBJZCbZb"/>
+</div>
+<h2 class="font-headline font-extrabold text-2xl tracking-tight">Kemal Öztürk</h2>
+<p class="font-label text-on-surface-variant uppercase tracking-widest text-xs">Premium Sentinel Üyesi</p>
+</div>
+<div class="md:col-span-8 grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl flex flex-col justify-center">
+<span class="font-label text-on-surface-variant text-[0.75rem] uppercase tracking-[0.05em] mb-1">Toplam Mesafe</span>
+<span class="font-headline font-bold text-4xl text-primary">12,482<span class="text-xl ml-1 font-medium">km</span></span>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl flex flex-col justify-center">
+<span class="font-label text-on-surface-variant text-[0.75rem] uppercase tracking-[0.05em] mb-1">Keşfedilen Bölge</span>
+<span class="font-headline font-bold text-4xl text-primary">24<span class="text-xl ml-1 font-medium">Bölge</span></span>
+</div>
+</div>
+</section>
+<!-- My Vehicle Section (Bento Style) -->
+<section class="mb-12">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline font-bold text-xl uppercase tracking-tighter">My Vehicle</h3>
+<span class="bg-primary/10 text-primary px-3 py-1 rounded-full font-label text-xs font-bold">Aktif Araç</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Vehicle Card -->
+<div class="md:col-span-2 bg-surface-container-lowest shadow-[0_8px_32px_rgba(26,28,28,0.08)] rounded-xl overflow-hidden relative group">
+<div class="absolute inset-0 bg-gradient-to-r from-primary/80 to-transparent z-10"></div>
+<img alt="Vehicle" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="modern grey suv parked on a clean asphalt road with professional cinematic lighting and blurred industrial background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2FUGS3CPxkSYzscHBqgcAxUJmnR9YKPFJ_mhG8NEnmqooXwTZPdNGEmAEJYa8OcqixDU0E5xv4TEnzBt72pPG9FBm8qwVXI-s58yJrgErSpiFjEssHgXI3BmKPbwYJUBoyTWqOSAGmqrBJYNQHf2mHMZLRnjYlqAWnpBsq0J7ZWKeB1Iw2dcttPARqTqMLcnQX0dUVl2wrq2_--ThfKLpWYBnxBj4W269UdRfS7rhnZCxRijrl2igIVULttaU8mqwcqwjbK0QyAIg"/>
+<div class="relative z-20 p-8 flex flex-col h-full justify-between min-h-[220px]">
+<div>
+<span class="bg-white/20 backdrop-blur-md text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest mb-4 inline-block">Volvo XC90 • Recharge</span>
+<h4 class="text-white font-headline font-black text-3xl tracking-tight">Sentinel Alpha</h4>
+</div>
+<div class="flex items-center gap-4">
+<div class="bg-white px-4 py-2 rounded-lg border-2 border-on-background/10">
+<span class="font-headline font-extrabold text-on-surface tracking-widest">B-821-VK</span>
+</div>
+<span class="text-white/80 font-label text-sm uppercase">AB PLAKA</span>
+</div>
+</div>
+</div>
+<!-- Trailer Toggle & Settings -->
+<div class="bg-surface-container-low p-6 rounded-xl flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-6">
+<span class="material-symbols-outlined text-secondary scale-125" data-icon="rv_hookup">rv_hookup</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-dim peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<h4 class="font-headline font-bold text-lg mb-1">Römork Modu</h4>
+<p class="text-on-surface-variant text-sm">Uzatılmış araç uzunluğu ve ağırlığı için optimize edilmiş rotalar.</p>
+</div>
+<div class="mt-6 border-t border-outline-variant/30 pt-4">
+<button class="w-full flex items-center justify-between text-primary font-label font-bold text-sm hover:opacity-70 transition-opacity">ARAÇ ÖZELLİKLERİ <span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+</div>
+</section>
+<!-- Vignette Checklist -->
+<section class="mb-12">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-headline font-bold text-xl uppercase tracking-tighter">VİNYET KONTROL LİSTESİ</h3>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-sm" data-icon="route">route</span>
+<span class="font-label text-xs">Mevcut Rota: Orta Avrupa</span>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-xl overflow-hidden">
+<!-- Austria -->
+<div class="flex items-center justify-between px-6 py-5 bg-white shadow-sm">
+<div class="flex items-center gap-4">
+<div class="w-10 h-6 bg-red-600 rounded-sm relative overflow-hidden flex items-center justify-center">
+<div class="h-1/3 w-full bg-white absolute inset-0 my-auto"></div>
+</div>
+<span class="font-headline font-semibold text-lg">Austria</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="font-label text-xs text-primary font-bold">DİJİTAL AKTİF</span>
+<div class="bg-primary rounded-full p-1 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-sm" data-icon="check" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+</div>
+<!-- Hungary -->
+<div class="flex items-center justify-between px-6 py-5 border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="w-10 h-6 bg-green-700 rounded-sm relative overflow-hidden flex flex-col">
+<div class="h-1/3 w-full bg-red-600"></div>
+<div class="h-1/3 w-full bg-white"></div>
+</div>
+<span class="font-headline font-semibold text-lg">Hungary</span>
+</div>
+<div class="flex items-center gap-3">
+<span class="font-label text-xs text-primary font-bold">DİJİTAL AKTİF</span>
+<div class="bg-primary rounded-full p-1 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-sm" data-icon="check" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</div>
+</div>
+<!-- Serbia -->
+<div class="flex items-center justify-between px-6 py-5 border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="w-10 h-6 bg-blue-700 rounded-sm relative overflow-hidden flex flex-col">
+<div class="h-1/3 w-full bg-red-600"></div>
+<div class="h-1/3 w-full bg-blue-700"></div>
+<div class="h-1/3 w-full bg-white"></div>
+</div>
+<span class="font-headline font-semibold text-lg">Serbia</span>
+</div>
+<button class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-lg font-label text-xs font-bold hover:scale-95 transition-transform active:scale-90">VİNYET SATIN AL</button>
+</div>
+<!-- Bulgaria -->
+<div class="flex items-center justify-between px-6 py-5 border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="w-10 h-6 bg-green-600 rounded-sm relative overflow-hidden flex flex-col">
+<div class="h-1/3 w-full bg-white"></div>
+<div class="h-1/3 w-full bg-green-600"></div>
+<div class="h-1/3 w-full bg-red-600"></div>
+</div>
+<span class="font-headline font-semibold text-lg">Bulgaria</span>
+</div>
+<button class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-lg font-label text-xs font-bold hover:scale-95 transition-transform active:scale-90">VİNYET SATIN AL</button>
+</div>
+<!-- Turkey -->
+<div class="flex items-center justify-between px-6 py-5 border-t border-outline-variant/10">
+<div class="flex items-center gap-4">
+<div class="w-10 h-6 bg-red-600 rounded-sm relative overflow-hidden flex items-center justify-center">
+<div class="w-3 h-3 border-2 border-white rounded-full"></div>
+</div>
+<span class="font-headline font-semibold text-lg">Turkey</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="font-label text-xs font-medium uppercase">HGS SİSTEMİ</span>
+<span class="material-symbols-outlined text-sm" data-icon="info">info</span>
+</div>
+</div>
+</div>
+</section>
+<!-- SOS & Help Links -->
+<section class="mb-20">
+<a class="block bg-error/5 border border-error/20 p-6 rounded-xl hover:bg-error/10 transition-colors group" href="#">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-5">
+<div class="bg-error w-12 h-12 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-white" data-icon="emergency_share" style="font-variation-settings: 'FILL' 1;">emergency_share</span>
+</div>
+<div>
+<h4 class="font-headline font-bold text-lg text-on-surface">SOS Ayarları</h4>
+<p class="text-on-surface-variant text-sm">Acil durum kişilerini ve yardım taleplerini yapılandırın.</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="chevron_right">chevron_right</span>
+</div>
+</a>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-[#ffffff]/80 dark:bg-[#2f3131]/80 backdrop-blur-3xl shadow-[0_-8px_32px_rgba(26,28,28,0.08)] rounded-t-3xl z-50">
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 p-2 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="explore">explore</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em] mt-1">Harita</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 p-2 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em] mt-1">Topluluk</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-[#003f87] to-[#0056b3] text-white rounded-xl px-6 py-2 tap-highlight-transparent transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="person" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em] mt-1">Profil</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,79 @@
+# Lokale Entwicklung: PostGIS, Redis, MinIO
+# Routing (OSRM/Valhalla) optional per Profil — siehe infra/README.md
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: yol-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yol
+      POSTGRES_PASSWORD: yol_dev_change_me
+      POSTGRES_DB: yol
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yol -d yol']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: yol-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: yol-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: yolminio
+      MINIO_ROOT_PASSWORD: yol_minio_dev_change_me
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: yol-api
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      DATABASE_URL: postgresql://yol:yol_dev_change_me@postgres:5432/yol
+      JWT_SECRET: dev_jwt_secret_mindestens_16_zeichen_x
+      PORT: '4000'
+      HOST: 0.0.0.0
+      CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173
+      # API-Image ist production; ohne dieses Flag nur exakte CORS_ORIGIN-URLs (Vite nutzt oft 5174+)
+      CORS_RELAX_LOCALHOST: 'true'
+      INIT_DB: 'true'
+    volumes:
+      - api_voice_data:/app/data/voice
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  api_voice_data:

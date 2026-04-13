@@ -1,0 +1,11 @@
+# Nur HTTP (z. B. schneller Test per Droplet-IP, ohne TLS)
+:80 {
+	encode zstd gzip
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:80
+	}
+}

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Border Crossing Detail - The Sentinel</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed-dim": "#ffb77d",
+                    "on-primary-fixed": "#001a40",
+                    "inverse-on-surface": "#f0f1f1",
+                    "tertiary-container": "#983c00",
+                    "on-primary-container": "#bbd0ff",
+                    "surface-variant": "#e2e2e2",
+                    "on-tertiary-container": "#ffc2a7",
+                    "on-secondary": "#ffffff",
+                    "on-secondary-fixed": "#2f1500",
+                    "on-secondary-fixed-variant": "#6e3900",
+                    "tertiary": "#722b00",
+                    "tertiary-fixed-dim": "#ffb694",
+                    "surface-container-high": "#e8e8e8",
+                    "surface-tint": "#115cb9",
+                    "on-background": "#1a1c1c",
+                    "background": "#f9f9f9",
+                    "error": "#ba1a1a",
+                    "surface-container-highest": "#e2e2e2",
+                    "surface-container": "#eeeeee",
+                    "surface-container-low": "#f3f3f3",
+                    "surface-dim": "#dadada",
+                    "secondary-container": "#fd8b00",
+                    "on-secondary-container": "#603100",
+                    "surface": "#f9f9f9",
+                    "on-tertiary": "#ffffff",
+                    "outline": "#727784",
+                    "outline-variant": "#c2c6d4",
+                    "on-surface-variant": "#424752",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed": "#ffdbcc",
+                    "on-surface": "#1a1c1c",
+                    "on-primary": "#ffffff",
+                    "surface-bright": "#f9f9f9",
+                    "inverse-surface": "#2f3131",
+                    "on-tertiary-fixed": "#351000",
+                    "inverse-primary": "#acc7ff",
+                    "on-tertiary-fixed-variant": "#7b2f00",
+                    "primary-container": "#0056b3",
+                    "on-error": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#904d00",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-fixed": "#d7e2ff",
+                    "primary": "#003f87",
+                    "on-primary-fixed-variant": "#004491",
+                    "secondary-fixed": "#ffdcc3",
+                    "primary-fixed-dim": "#acc7ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface font-body text-on-surface">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#f9f9f9] dark:bg-[#2f3131] shadow-[0_8px_32px_rgba(26,28,28,0.08)] flex justify-between items-center px-6 py-4 w-full">
+<div class="flex items-center gap-4">
+<button class="hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary dark:text-white text-2xl">arrow_back</span>
+</button>
+<h1 class="font-['Inter'] font-bold text-3xl tracking-tight text-[#003f87] dark:text-[#ffffff]">Horgos - Röszke Sınır Kapısı</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary dark:text-white text-2xl">search</span>
+</button>
+<button class="hover:opacity-80 transition-opacity scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary dark:text-white text-2xl">emergency_home</span>
+</button>
+</div>
+</header>
+<main class="pt-24 pb-32 px-4 md:px-8 max-w-7xl mx-auto space-y-8">
+<!-- Hero Section / Map Integration -->
+<section class="relative h-[300px] rounded-3xl overflow-hidden shadow-2xl">
+<img class="w-full h-full object-cover" data-alt="Satellite view of a highway border crossing complex between Serbia and Hungary with multiple lanes and customs buildings" data-location="Horgos" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9QvDxYzKnROlxgZ-q3lCbr4aTPzSBfwVQlnxM5cFKGinNxw7izcLvZ8uWlWaVjBYBAUya0JknmzOndU9Fd0mOOPm9W2e8AHHmW1iZi3oZ3sHiI-yM3LaKQxfX0XrrdkKkUGDyxISX048CJhKomQzBGsKK2kmFgie-2SFPX3bIibFYkFAKH8Pdl8h6ufD0A9L_vS_zIUAPVIvUfpmea7xqOsjDvIZ2PswngXrXKbQKnIH_kV0cRBUzHULkYVWs31fwew2sf1jBEV9d"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-background/60 to-transparent"></div>
+<div class="absolute bottom-6 left-6 flex items-end gap-6">
+<div class="flex -space-x-4">
+<div class="w-16 h-12 rounded-lg bg-[#ffffff] border-4 border-surface shadow-lg flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Flag of Serbia with coat of arms" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7kFpwRhKKphbjRs9gO6-8_6hVzW3TpQZ8o7JFXHX0zgxGt0UF-um_rqMGOBlTEXM2Iwc0SPbgssMmk6ptGGmSCnsk0_vodQxZBbtOlycTgWFY7d01K2AO6Qi2UIx-REVpYOQA27FLRn8hYkbwQrc1QLW6YgP0-EvVMecF5mtnxMNrKYFPJ9cFHg6PE7s7gg1G-75MY2CtcBFVrzDOj1mvkf588t3nLWWmAoi6JHvY6pMkLo5iOliJSHDCIou0GtqOPKZOn37pCXjH"/>
+</div>
+<div class="w-16 h-12 rounded-lg bg-[#ffffff] border-4 border-surface shadow-lg flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Flag of Hungary with red white and green horizontal stripes" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLd-jkY_jzmYqyCJTk2NK-Yyb81juTm4zXJ5OgZCDRwfdDLIF59ahtPZ8VOUnszW8XPCHIhhxrvOJLP0YhkVyjNK45-NMmH_ZLXgoY9AFCK0TkMIei4IaFEbliECtBt6NPcu0pabnR42X-eAiNzhWGaw-CD13iLS_d17E-xZgXKQwxHxbzlK-Z6GZjNA0rW_Uz9mT259AzRRuLrbkJFYieMZm3MzdvySJTslIr-6RAKhxMz0hppM-EJSQd1fgaze3HlURIGk0ugmJP"/>
+</div>
+</div>
+<div>
+<p class="text-white/80 font-label text-[0.75rem] uppercase tracking-[0.05em]">Sınır Bölgesi</p>
+<h2 class="text-white text-3xl font-bold">SRB <span class="mx-2 opacity-50">/</span> HU</h2>
+</div>
+</div>
+<div class="absolute top-6 right-6">
+<div class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-full font-bold flex items-center gap-2 shadow-lg">
+<span class="material-symbols-outlined text-[18px]">warning</span>
+<span>Yoğun Trafik</span>
+</div>
+</div>
+</section>
+<!-- Main Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+<!-- Wait Time Section -->
+<div class="md:col-span-5 bg-surface-container-lowest rounded-3xl p-8 shadow-[0_8px_32px_rgba(26,28,28,0.08)] flex flex-col justify-between relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-headline font-bold text-xl text-on-surface mb-1">Bekleme Süresi</h3>
+<p class="text-on-surface-variant text-sm mb-8">Binek Araçlar İçin Tahmini</p>
+<div class="flex items-baseline gap-2">
+<span class="text-7xl font-black text-primary tracking-tighter">45</span>
+<span class="text-2xl font-bold text-primary/60">DK</span>
+</div>
+<div class="mt-8 flex items-center gap-3 bg-surface-container rounded-xl p-4">
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 1;">group</span>
+<p class="text-sm font-medium"><span class="text-secondary font-bold">12 aktif kullanıcı</span> şu an bildiriyor</p>
+</div>
+</div>
+<!-- High Contrast Gauge Background -->
+<div class="absolute -right-12 -bottom-12 w-64 h-64 opacity-5">
+<span class="material-symbols-outlined text-[240px]" style="font-variation-settings: 'wght' 100;">speed</span>
+</div>
+</div>
+<!-- Rules & Info Section -->
+<div class="md:col-span-7 bg-surface-container-low rounded-3xl p-8 space-y-6">
+<div class="flex justify-between items-center">
+<h3 class="font-headline font-bold text-xl text-on-surface">Kurallar ve Giriş Bilgileri</h3>
+<span class="material-symbols-outlined text-outline">info</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest p-5 rounded-2xl space-y-3">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-lg">speed</span>
+<span class="font-bold text-sm tracking-wide uppercase">Serbia Speed Limits</span>
+</div>
+<ul class="text-on-surface-variant text-sm space-y-2">
+<li class="flex justify-between"><span>Şehir İçi</span> <span class="font-bold text-on-surface">50 km/h</span></li>
+<li class="flex justify-between"><span>Otoban</span> <span class="font-bold text-on-surface">130 km/h</span></li>
+</ul>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-2xl space-y-3">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-lg">confirmation_number</span>
+<span class="font-bold text-sm tracking-wide uppercase">Hungary Vignette</span>
+</div>
+<p class="text-on-surface-variant text-sm">Required for all motorways. Digital e-vignette available at border terminals.</p>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-2xl space-y-3">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-lg">payments</span>
+<span class="font-bold text-sm tracking-wide uppercase">Currency</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-on-surface-variant text-sm">RSD / EUR / HUF</span>
+<span class="bg-primary/10 text-primary px-2 py-1 rounded text-[10px] font-bold">KART GEÇERLİDİR</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-2xl space-y-3">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-lg">description</span>
+<span class="font-bold text-sm tracking-wide uppercase">Documents</span>
+</div>
+<p class="text-on-surface-variant text-sm">Passport, Green Card (Insurance), Vehicle Registration.</p>
+</div>
+</div>
+</div>
+<!-- Community Reports Section -->
+<div class="md:col-span-12 space-y-6">
+<div class="flex justify-between items-end px-2">
+<div>
+<h3 class="font-headline font-bold text-2xl text-on-surface">Topluluk Raporları</h3>
+<p class="text-on-surface-variant">Sürücülerden anlık güncellemeler</p>
+</div>
+<button class="bg-gradient-to-br from-primary to-primary-container text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg"><span class="material-symbols-outlined">add_a_photo</span> Hemen Bildir</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Report Card 1 -->
+<div class="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(26,28,28,0.04)] group">
+<div class="h-48 overflow-hidden relative">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A line of cars at a border crossing during daylight with orange cones and asphalt road" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9af_ozXvm6DsDCS5_f5yF_THFuzjje_PMXFhw6KT8biV9iSGJ-H6r6WVUn4FR8G7rAbKbhI6VE2r5H1PPUY3aBUudUjCFwdtg9Wy1T5OcSYJqk2gATtNSNxGa2JAyDOI4sFFpDigvOCoajqqu0Zul0vUoK5Ve-sBSwD-oScTqiDJqQx58jZ76Can6wmgbHyZMRNkylEz-6JiYpWEbwsNbSEpAbWoaegZkLGsBndFlSgvLeJ0uDXA2657NCFzowzgMXzca1HE1SKzV"/>
+<div class="absolute top-4 left-4 bg-on-background/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded">2 DAKİKA ÖNCE</div>
+</div>
+<div class="p-6 space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a smiling man with short hair" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNnZZVCjCEASkwTFjSwSU72lkJsazLLlqqyI7Qdi4KoqhPK8DZvEphddfaR4EfT4mID8gFnNyMuYMmjbKf3rnxI6dureqVX6i7YuSqEvx8MvPUjD55gzgpCT7jCFZg4kbjv4sU4I2wbaAnBNPBzcv3ofN-1lyqP1TaXQRUdyf9Xy4G3DL9u_pHVLuHu3eakyFgxcw8ZGE6CAClQD6FIzQjStLvtY6Pkvgi6phTS8WR7e-U8eLkeoFOetiVz2OdYSVEnYJp2VVJ5EkA"/>
+</div>
+<span class="text-sm font-bold">Mehmet V.</span>
+</div>
+<p class="text-on-surface-variant text-sm leading-relaxed">"Yavaş ilerliyor. Sırbistan tarafında sadece 3 şerit açık. Macaristan tarafı daha hızlı görünüyor."</p>
+</div>
+</div>
+<!-- Report Card 2 -->
+<div class="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(26,28,28,0.04)] group">
+<div class="h-48 overflow-hidden relative">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Rainy highway at dusk with blurry car lights and grey clouds" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCfMNeOkckR7rXu-tknMGPKz-1HyNzF5Bo0kHa1e4-9jnWdayGiKgWOfMYAhsK2cs1_EnTIu_9WcvyGgZ45p34F9bqjtmPJNOlIXjd7YcLQ9AJzam-V9FV7oLR55qhmMj5ar4src2nae_z-Seh57JfJsscoVV644ZxutG5EGdVvU2If0L505zJEzUluAeCWk4rnIphpDh2V8Sl_x3NQRphGkH6MjMVR6l-_IfnxEoxrg1nPLRBYbyY7pD3mmEOW_Is9gWIVX9Bnwz5S"/>
+<div class="absolute top-4 left-4 bg-on-background/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded">15 DAKİKA ÖNCE</div>
+</div>
+<div class="p-6 space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a woman with long hair smiling" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlwGsEIjhmcdzaQBRha3_HYLsVwwFqIuVD19xzidD1_ydYbPO0m-RDwDRo65rfpc3Y-EzJqP1044eY-NI6_-x9xfBUYJ27fZLPb6tY-WRtzejgFs1xsfrdODN7DTRLMEyEuQlpy7N6K72hGajASrNHYFiDQILAZ3Im1pSOtxhSTfY3jgEnQ-zxq4rA4F0EUYsIi3QMt6pRHdVlQ99uW7JjVNN5v-1C3PI3K8NwnzUAlyR1SGWKZYJTTiVCqTRANdSYceD6jj487uWd"/>
+</div>
+<span class="text-sm font-bold">Elif K.</span>
+</div>
+<p class="text-on-surface-variant text-sm leading-relaxed">"Hafif yağmur başlıyor. Terminal girişine yakın yollar kayganlaşıyor."</p>
+</div>
+</div>
+<!-- Report Card 3 -->
+<div class="bg-surface-container-lowest rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(26,28,28,0.04)] group">
+<div class="h-48 bg-surface-container flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-outline-variant rounded-t-3xl">
+<span class="material-symbols-outlined text-4xl text-outline mb-2">add_circle</span>
+<p class="text-on-surface-variant font-medium text-sm">Fotoğraf eklenmedi</p>
+</div>
+<div class="p-6 space-y-3">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-dim overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Portrait of a man with a beard wearing glasses" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1A4sLd5svsJFzqiTRFBXxuSIY3A-5l11iH8hoUB9TLqMH2d-qyrkoq2nVtKr0MDOLh2ynnH327PP5SJUudmmEcIRErx0son02MTsF4zZxlntX8MN_YSxPBFEEixGfgaxWdwYQLPcbhz1Z2EAe2oCa4OH3chKDuodg2fwXLTr0bxcC0MxgJyC4jDAqv72WQwCnSh_jommH2sJuqXaqG7s65ieW40Udg9FjwAPmLk-2nYS852qWcIcckYTZzzWI_BLBsK79KpwPAkFw"/>
+</div>
+<span class="text-sm font-bold">Sertan J.</span>
+</div>
+<p class="text-on-surface-variant text-sm leading-relaxed">"Yeni geçtim. Toplam süre 40 dakika. Polis tüm belgeleri titizlikle kontrol ediyor."</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-[#ffffff]/80 dark:bg-[#2f3131]/80 backdrop-blur-3xl rounded-t-3xl z-50 shadow-[0_-8px_32px_rgba(26,28,28,0.08)]">
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-[#003f87] to-[#0056b3] text-white rounded-xl px-6 py-2 transition-all duration-300 tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">explore</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Harita</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 transition-all duration-300 tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Topluluk</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#2f3131] dark:text-[#dadada] opacity-60 hover:bg-[#f3f3f3] dark:hover:bg-white/10 transition-all duration-300 tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-['Inter'] font-medium text-[0.75rem] uppercase tracking-[0.05em]">Profil</span>
+</a>
+</nav>
+</body></html>

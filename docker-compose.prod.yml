@@ -1,0 +1,80 @@
+# Produktion / Live-Tests (z. B. DigitalOcean Droplet)
+# Voraussetzung: .env im gleichen Verzeichnis (siehe infra/digitalocean/env.example)
+#
+#   cp infra/digitalocean/env.example .env
+#   nano .env
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Mit Domain + TLS: Standard-Caddyfile (Let's Encrypt)
+# Nur HTTP (z. B. Droplet-IP): CADDYFILE=./infra/digitalocean/Caddyfile.http
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: yol
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: yol
+    volumes:
+      - yol_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yol -d yol']
+      interval: 5s
+      timeout: 5s
+      retries: 8
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - '4000'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://yol:${POSTGRES_PASSWORD}@postgres:5432/yol
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (min. 16 Zeichen)}
+      PORT: '4000'
+      HOST: 0.0.0.0
+      CORS_ORIGIN: ${CORS_ORIGIN:?Set CORS_ORIGIN in .env}
+      INIT_DB: ${INIT_DB:-true}
+      GEOCODING_USER_AGENT: ${GEOCODING_USER_AGENT:-YolArkadasim/1.0 (set-in-.env)}
+      OSRM_URL: ${OSRM_URL:-}
+    volumes:
+      - yol_api_voice:/app/data/voice
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - '80'
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ${CADDYFILE:-./infra/digitalocean/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+
+volumes:
+  yol_pg_data:
+  yol_api_voice:
+  caddy_data:
+  caddy_config:
