@@ -77,6 +77,7 @@ export type User = {
   statsKm: number
   statsRegions: number
   createdAt: string
+  role?: 'user' | 'admin'
 }
 
 export type PostDto = {
@@ -519,6 +520,10 @@ export async function askRouteAssistant(
     vehicleClass: TollVehicleClass
     corridor?: string
     geometry?: DrivingRouteDto['geometry']
+    /** Gruppenkontext (nur mit Token): Chat + frühere KI-Notizen. */
+    groupId?: string
+    /** Antwort für spätere KI-Anfragen in dieser Gruppe speichern. */
+    saveMemory?: boolean
   },
   opts?: { signal?: AbortSignal; token?: string | null },
 ) {
@@ -527,5 +532,444 @@ export async function askRouteAssistant(
     token: opts?.token ?? undefined,
     body: JSON.stringify(body),
     signal: opts?.signal,
+  })
+}
+
+export type RideOfferKind = 'passenger' | 'cargo' | 'both'
+
+export type RideListingDto = {
+  id: string
+  userId: string
+  authorName: string
+  offerKind: RideOfferKind
+  routeFrom: string
+  routeTo: string
+  departureNote: string
+  freeSeats: number | null
+  cargoSpaceNote: string
+  details: string
+  status: 'open' | 'closed'
+  createdAt: string
+  pendingRequestCount?: number
+}
+
+export type RideRequestDto = {
+  id: string
+  requesterId: string
+  requesterName: string
+  requestKind: 'passenger' | 'cargo'
+  message: string
+  status: 'pending' | 'withdrawn' | 'accepted' | 'declined'
+  createdAt: string
+}
+
+export async function fetchRideListings(opts?: {
+  token?: string | null
+  mine?: boolean
+  offerKind?: RideOfferKind
+}) {
+  const q = new URLSearchParams()
+  if (opts?.mine) q.set('mine', '1')
+  if (opts?.offerKind) q.set('offerKind', opts.offerKind)
+  const qs = q.toString()
+  return apiFetch<{ listings: RideListingDto[] }>(`/ride-listings${qs ? `?${qs}` : ''}`, {
+    token: opts?.mine ? opts.token ?? undefined : undefined,
+  })
+}
+
+export async function fetchRideListing(id: string) {
+  return apiFetch<{ listing: RideListingDto }>(`/ride-listings/${id}`)
+}
+
+export async function createRideListing(
+  token: string,
+  body: {
+    offerKind: RideOfferKind
+    routeFrom: string
+    routeTo: string
+    departureNote?: string
+    freeSeats?: number | null
+    cargoSpaceNote?: string
+    details: string
+  },
+) {
+  return apiFetch<{ listing: RideListingDto }>('/ride-listings', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      offerKind: body.offerKind,
+      routeFrom: body.routeFrom,
+      routeTo: body.routeTo,
+      departureNote: body.departureNote ?? '',
+      freeSeats: body.freeSeats ?? null,
+      cargoSpaceNote: body.cargoSpaceNote ?? '',
+      details: body.details,
+    }),
+  })
+}
+
+export async function patchRideListing(token: string, id: string, body: { status: 'open' | 'closed' }) {
+  return apiFetch<{ listing: RideListingDto }>(`/ride-listings/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function createRideRequest(
+  token: string,
+  listingId: string,
+  body: { requestKind: 'passenger' | 'cargo'; message?: string },
+) {
+  return apiFetch<{ request: RideRequestDto & { listingId: string } }>(
+    `/ride-listings/${listingId}/requests`,
+    { method: 'POST', token, body: JSON.stringify(body) },
+  )
+}
+
+export async function fetchRideListingRequests(token: string, listingId: string) {
+  return apiFetch<{ requests: RideRequestDto[] }>(`/ride-listings/${listingId}/requests`, { token })
+}
+
+export async function patchRideRequest(
+  token: string,
+  requestId: string,
+  body: { status: 'withdrawn' | 'accepted' | 'declined' },
+) {
+  return apiFetch<{ ok: boolean; status: string }>(`/ride-requests/${requestId}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export type CuratedPlaceCategory = 'accommodation' | 'restaurant' | 'rest_area'
+
+export type CuratedPlaceDto = {
+  id: string
+  category: CuratedPlaceCategory
+  name: string
+  description: string
+  lat: number
+  lng: number
+  address: string
+  region: string
+  phone: string
+  website: string
+  imageUrl: string
+  isPublished: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchCuratedPlaces(category?: CuratedPlaceCategory) {
+  const q = category ? `?category=${encodeURIComponent(category)}` : ''
+  return apiFetch<{ places: CuratedPlaceDto[] }>(`/curated-places${q}`)
+}
+
+export async function fetchAdminStats(token: string) {
+  return apiFetch<{
+    stats: {
+      users: number
+      posts: number
+      curatedPlaces: number
+      rideListings: number
+      rideRequests: number
+      vignetteProducts?: number
+      vignetteOrders?: number
+    }
+  }>('/admin/stats', { token })
+}
+
+export type AdminUserRow = {
+  id: string
+  email: string
+  displayName: string
+  role: string
+  mapIcon: string
+  tollVehicleClass: string
+  statsKm: number
+  statsRegions: number
+  createdAt: string
+}
+
+export async function fetchAdminUsers(token: string, opts?: { limit?: number; offset?: number; q?: string }) {
+  const p = new URLSearchParams()
+  if (opts?.limit != null) p.set('limit', String(opts.limit))
+  if (opts?.offset != null) p.set('offset', String(opts.offset))
+  if (opts?.q) p.set('q', opts.q)
+  const qs = p.toString()
+  return apiFetch<{ users: AdminUserRow[] }>(`/admin/users${qs ? `?${qs}` : ''}`, { token })
+}
+
+export async function patchAdminUser(
+  token: string,
+  userId: string,
+  body: { role?: 'user' | 'admin'; displayName?: string },
+) {
+  return apiFetch<{ user: AdminUserRow }>(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function fetchAdminCuratedPlaces(token: string) {
+  return apiFetch<{ places: CuratedPlaceDto[] }>('/admin/curated-places', { token })
+}
+
+export async function createAdminCuratedPlace(
+  token: string,
+  body: {
+    category: CuratedPlaceCategory
+    name: string
+    description?: string
+    lat: number
+    lng: number
+    address?: string
+    region?: string
+    phone?: string
+    website?: string
+    imageUrl?: string
+    isPublished?: boolean
+    sortOrder?: number
+  },
+) {
+  return apiFetch<{ place: CuratedPlaceDto }>('/admin/curated-places', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({
+      category: body.category,
+      name: body.name,
+      description: body.description ?? '',
+      lat: body.lat,
+      lng: body.lng,
+      address: body.address ?? '',
+      region: body.region ?? '',
+      phone: body.phone ?? '',
+      website: body.website ?? '',
+      imageUrl: body.imageUrl ?? '',
+      isPublished: body.isPublished ?? true,
+      sortOrder: body.sortOrder ?? 0,
+    }),
+  })
+}
+
+export async function patchAdminCuratedPlace(
+  token: string,
+  id: string,
+  body: Partial<{
+    category: CuratedPlaceCategory
+    name: string
+    description: string
+    lat: number
+    lng: number
+    address: string
+    region: string
+    phone: string
+    website: string
+    imageUrl: string
+    isPublished: boolean
+    sortOrder: number
+  }>,
+) {
+  return apiFetch<{ place: CuratedPlaceDto }>(`/admin/curated-places/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteAdminCuratedPlace(token: string, id: string) {
+  return apiFetch<{ ok: boolean }>(`/admin/curated-places/${id}`, { method: 'DELETE', token })
+}
+
+export type AdminRideListingRow = {
+  id: string
+  offerKind: string
+  routeFrom: string
+  routeTo: string
+  status: string
+  createdAt: string
+  ownerEmail: string
+  ownerName: string
+}
+
+export async function fetchAdminRideListings(token: string) {
+  return apiFetch<{ listings: AdminRideListingRow[] }>('/admin/ride-listings', { token })
+}
+
+export async function patchAdminRideListing(token: string, id: string, body: { status: 'open' | 'closed' }) {
+  return apiFetch<{ ok: boolean; status: string }>(`/admin/ride-listings/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export type VignetteServiceProductDto = {
+  id: string
+  countryCode: string
+  vehicleClass: string
+  kind: string
+  title: string
+  description: string
+  officialUrl: string
+  partnerCheckoutUrl: string
+  retailHintEur: number | null
+  serviceFeeEur: number
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchVignetteServiceProducts(countryCode?: string) {
+  const q = countryCode ? `?countryCode=${encodeURIComponent(countryCode)}` : ''
+  return apiFetch<{ products: VignetteServiceProductDto[] }>(`/vignette-service-products${q}`)
+}
+
+export async function createVignetteOrderRequest(
+  token: string,
+  body: {
+    vehicleClass: TollVehicleClass
+    countries: { code: string; name: string }[]
+    routeLabel?: string
+    productIds: string[]
+    customerNote?: string
+  },
+) {
+  return apiFetch<{ request: { id: string; status: string; createdAt: string } }>('/vignette-order-requests', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export type MyVignetteOrderDto = {
+  id: string
+  status: string
+  routeLabel: string
+  quotedTotalEur: number | null
+  createdAt: string
+  paidAt: string | null
+  canPay: boolean
+}
+
+export async function fetchMyVignetteOrderRequests(token: string) {
+  return apiFetch<{ requests: MyVignetteOrderDto[] }>('/my/vignette-order-requests', { token })
+}
+
+export async function createVignetteStripeCheckoutSession(token: string, orderId: string) {
+  return apiFetch<{ url: string }>(`/vignette-order-requests/${orderId}/stripe-checkout`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({}),
+  })
+}
+
+export async function confirmVignetteStripeCheckout(token: string, sessionId: string) {
+  return apiFetch<{ ok: boolean; status?: string; alreadyConfirmed?: boolean }>(
+    '/vignette-order-requests/confirm-checkout',
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ sessionId }),
+    },
+  )
+}
+
+export async function fetchAdminVignetteProducts(token: string) {
+  return apiFetch<{ products: VignetteServiceProductDto[] }>('/admin/vignette-service-products', { token })
+}
+
+export async function createAdminVignetteProduct(
+  token: string,
+  body: {
+    id: string
+    countryCode: string
+    vehicleClass?: 'car' | 'motorcycle' | 'heavy' | 'other' | 'all'
+    kind?: 'vignette' | 'toll' | 'info'
+    title: string
+    description?: string
+    officialUrl?: string
+    partnerCheckoutUrl?: string
+    retailHintEur?: number | null
+    serviceFeeEur?: number
+    isActive?: boolean
+    sortOrder?: number
+  },
+) {
+  return apiFetch<{ product: VignetteServiceProductDto }>('/admin/vignette-service-products', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function patchAdminVignetteProduct(
+  token: string,
+  id: string,
+  body: Partial<{
+    countryCode: string
+    vehicleClass: 'car' | 'motorcycle' | 'heavy' | 'other' | 'all'
+    kind: 'vignette' | 'toll' | 'info'
+    title: string
+    description: string
+    officialUrl: string
+    partnerCheckoutUrl: string
+    retailHintEur: number | null
+    serviceFeeEur: number
+    isActive: boolean
+    sortOrder: number
+  }>,
+) {
+  return apiFetch<{ product: VignetteServiceProductDto }>(`/admin/vignette-service-products/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteAdminVignetteProduct(token: string, id: string) {
+  return apiFetch<{ ok: boolean }>(`/admin/vignette-service-products/${id}`, { method: 'DELETE', token })
+}
+
+export type VignetteOrderRequestAdminDto = {
+  id: string
+  status: string
+  vehicleClass: string
+  countries: unknown
+  routeLabel: string
+  productIds: string[]
+  customerNote: string
+  adminNote: string
+  quotedTotalEur: number | null
+  paidAt?: string | null
+  stripeCheckoutSessionId?: string | null
+  createdAt: string
+  updatedAt: string
+  userEmail: string
+  userDisplayName: string
+}
+
+export async function fetchAdminVignetteOrderRequests(token: string) {
+  return apiFetch<{ requests: VignetteOrderRequestAdminDto[] }>('/admin/vignette-order-requests', { token })
+}
+
+export async function patchAdminVignetteOrderRequest(
+  token: string,
+  id: string,
+  body: {
+    status?: 'pending' | 'in_review' | 'quoted' | 'paid' | 'fulfilled' | 'cancelled'
+    adminNote?: string
+    quotedTotalEur?: number | null
+  },
+) {
+  return apiFetch<{ ok: boolean }>(`/admin/vignette-order-requests/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
   })
 }

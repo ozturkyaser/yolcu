@@ -40,6 +40,7 @@ export function BottomNav() {
   const nav = [
     { to: '/', label: t('navMap'), icon: 'explore' as const },
     { to: '/community', label: t('navCommunity'), icon: 'forum' as const },
+    { to: '/rides', label: t('navMarketplace'), icon: 'storefront' as const },
     { to: '/groups', label: t('navGroups'), icon: 'chat' as const },
     { to: '/profile', label: t('navProfile'), icon: 'person' as const },
   ]
@@ -55,7 +56,7 @@ export function BottomNav() {
           end={to === '/'}
           className={({ isActive }) =>
             [
-              'relative flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-2 py-2 transition-all duration-300 sm:px-4',
+              'relative flex min-w-0 flex-1 flex-col items-center justify-center rounded-xl px-1 py-2 transition-all duration-300 sm:px-3',
               isActive
                 ? 'bg-gradient-to-br from-primary to-primary-container text-on-primary'
                 : 'text-inverse-surface opacity-60 hover:bg-surface-container-low dark:text-surface-dim',
@@ -70,7 +71,9 @@ export function BottomNav() {
             />
           ) : null}
           <span className="material-symbols-outlined">{icon}</span>
-          <span className="font-sans text-[0.75rem] font-medium uppercase tracking-wide">{label}</span>
+          <span className="line-clamp-2 max-w-full text-center font-sans text-[0.65rem] font-medium uppercase leading-tight tracking-wide sm:text-[0.75rem]">
+            {label}
+          </span>
         </NavLink>
       ))}
     </nav>

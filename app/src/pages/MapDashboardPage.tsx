@@ -30,6 +30,12 @@ import {
   type GroupSummary,
   type MapPoiDto,
   type MapParticipantDto,
+  fetchCuratedPlaces,
+  type CuratedPlaceDto,
+  type CuratedPlaceCategory,
+  createVignetteOrderRequest,
+  fetchVignetteServiceProducts,
+  type VignetteServiceProductDto,
 } from '../lib/api'
 import { haversineKm } from '../lib/geo'
 import { BERLIN_CENTER_DEG, isGpsTestModeEnabled } from '../lib/gpsTestMode'
@@ -108,6 +114,25 @@ function poiChipPrefix(category: string): string {
 const LS_NAV_TTS = 'yol_nav_tts'
 const LS_NAV_WAKE = 'yol_nav_wake'
 const LS_NAV_AUTOREROUTE = 'yol_nav_autoreroute'
+const LS_SHOW_SELF_MARKER = 'yol_map_show_self_marker_v1'
+
+function readShowSelfMarker(): boolean {
+  try {
+    const v = localStorage.getItem(LS_SHOW_SELF_MARKER)
+    if (v === '0') return false
+    return true
+  } catch {
+    return true
+  }
+}
+
+function writeShowSelfMarker(on: boolean) {
+  try {
+    localStorage.setItem(LS_SHOW_SELF_MARKER, on ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
 
 function readNavPref(key: string, defaultOn: boolean): boolean {
   try {
@@ -139,6 +164,15 @@ export function MapDashboardPage() {
   const navigate = useNavigate()
   const [helpOpen, setHelpOpen] = useState(false)
   const [pois, setPois] = useState<MapPoiDto[]>([])
+  const [curatedPlaces, setCuratedPlaces] = useState<CuratedPlaceDto[]>([])
+  const [curatedCategoryFilter, setCuratedCategoryFilter] = useState<CuratedPlaceCategory | ''>('')
+  const [curatedSheet, setCuratedSheet] = useState<CuratedPlaceDto | null>(null)
+  const [vignetteModalOpen, setVignetteModalOpen] = useState(false)
+  const [vignetteCatalog, setVignetteCatalog] = useState<VignetteServiceProductDto[]>([])
+  const [vignetteSelected, setVignetteSelected] = useState<string[]>([])
+  const [vignetteNote, setVignetteNote] = useState('')
+  const [vignetteBusy, setVignetteBusy] = useState(false)
+  const [vignetteMsg, setVignetteMsg] = useState<string | null>(null)
   const [participants, setParticipants] = useState<MapParticipantDto[]>([])
   const [center, setCenter] = useState<{ lat: number; lng: number }>({
     lat: MAP_INITIAL_CENTER[1],
@@ -195,6 +229,8 @@ export function MapDashboardPage() {
   const [myGroups, setMyGroups] = useState<GroupSummary[]>([])
   /** 'all' oder Gruppen-ID: nur Mitglieder dieser Gruppe auf der Karte */
   const [mapGroupFilter, setMapGroupFilter] = useState<'all' | string>('all')
+  /** Eigene Position als Marker (ohne dass andere dich sehen – nur lokal / Karte). */
+  const [showSelfMarker, setShowSelfMarker] = useState(() => readShowSelfMarker())
   const [participantSheet, setParticipantSheet] = useState<ParticipantSheetUser | null>(null)
   const [mapEpoch, setMapEpoch] = useState(0)
   /** Automatische Kartenführung entlang der Route */
@@ -227,6 +263,10 @@ export function MapDashboardPage() {
   useEffect(() => {
     setRecentDestinations(readNavRecents())
   }, [])
+
+  useEffect(() => {
+    writeShowSelfMarker(showSelfMarker)
+  }, [showSelfMarker])
 
   useEffect(() => {
     const session = readNavSession()
@@ -356,6 +396,20 @@ export function MapDashboardPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const ac = new AbortController()
+    ;(async () => {
+      try {
+        const cat = curatedCategoryFilter || undefined
+        const { places } = await fetchCuratedPlaces(cat)
+        if (!ac.signal.aborted) setCuratedPlaces(places)
+      } catch {
+        if (!ac.signal.aborted) setCuratedPlaces([])
+      }
+    })()
+    return () => ac.abort()
+  }, [curatedCategoryFilter])
+
   const loadParticipants = useCallback(
     async (lat: number, lng: number) => {
       try {
@@ -450,7 +504,9 @@ export function MapDashboardPage() {
 
     const shareTrack = Boolean(user && token && shareOnMap)
     const navTrack = Boolean(routeGeometry?.coordinates?.length && navFollowActive)
-    const shouldWatch = shareTrack || navTrack
+    const needPosForNavLine = Boolean(user && token && routeGeometry?.coordinates?.length)
+    const needPosForSelfMarker = Boolean(user && token && showSelfMarker)
+    const shouldWatch = shareTrack || navTrack || needPosForNavLine || needPosForSelfMarker
 
     if (user && token && !shareOnMap && !navTrack) {
       void clearMyPresence(token).catch(() => {})
@@ -495,7 +551,7 @@ export function MapDashboardPage() {
         watchIdRef.current = null
       }
     }
-  }, [user, token, shareOnMap, routeGeometry, navFollowActive])
+  }, [user, token, shareOnMap, routeGeometry, navFollowActive, showSelfMarker])
 
   /** Bei neuer Route: Kompass-Glättung zurücksetzen. */
   useEffect(() => {
@@ -583,6 +639,42 @@ export function MapDashboardPage() {
     routeOverviewKeyRef.current = null
     smoothedBearingRef.current = null
     resumeNavigationGuidance()
+    const m = mapRef.current
+    if (m?.isStyleLoaded()) {
+      m.easeTo({ bearing: 0, pitch: 0, duration: 700, essential: true })
+    }
+  }
+
+  /** Route, Ziel und Session vollständig beenden (nicht nur Linie ausblenden). */
+  function endNavigation() {
+    stopNavigationVoice()
+    offRouteSinceRef.current = null
+    ttsPrevManeuverIdxRef.current = -1
+    ttsPrevDistRef.current = null
+    setRouteGeometry(null)
+    setRouteMeta(null)
+    setRouteSteps([])
+    setRouteErr(null)
+    setTollAdvice(null)
+    setTollAdviceErr(null)
+    setRouteBriefing(null)
+    setRouteBriefingErr(null)
+    setAssistantAnswer(null)
+    setAssistantErr(null)
+    setNavTarget(null)
+    setManualRouteStart(null)
+    setManualStartLabel(null)
+    setStartSectionOpen(false)
+    setMapPickTarget(null)
+    setDestSearchQuery('')
+    setDestSearchResults([])
+    setDestSearchErr(null)
+    setNavPanelOpen(false)
+    setNavHudExpanded(false)
+    routeOverviewKeyRef.current = null
+    smoothedBearingRef.current = null
+    resumeNavigationGuidance()
+    clearNavSession()
     const m = mapRef.current
     if (m?.isStyleLoaded()) {
       m.easeTo({ bearing: 0, pitch: 0, duration: 700, essential: true })
@@ -722,6 +814,23 @@ export function MapDashboardPage() {
       saveRecentDestination(dest)
       setRecentDestinations(readNavRecents())
       applyNavTarget(dest)
+      void computeRouteWithDest(dest)
+    },
+    [applyNavTarget, computeRouteWithDest],
+  )
+
+  const onCuratedPlaceMarkerClick = useCallback((place: CuratedPlaceDto) => {
+    setCuratedSheet(place)
+  }, [])
+
+  const navigateToCuratedPlace = useCallback(
+    (place: CuratedPlaceDto) => {
+      const dest = { lat: place.lat, lng: place.lng, label: place.name }
+      saveRecentDestination(dest)
+      setRecentDestinations(readNavRecents())
+      applyNavTarget(dest)
+      setCuratedSheet(null)
+      setNavPanelOpen(true)
       void computeRouteWithDest(dest)
     },
     [applyNavTarget, computeRouteWithDest],
@@ -878,7 +987,7 @@ export function MapDashboardPage() {
 
   const participantMarkers: MapParticipantMarker[] = useMemo(() => {
     const groupFilterActive = mapGroupFilter !== 'all'
-    return participants.map((p) => {
+    const base = participants.map((p) => {
       let inGroupRange: boolean | undefined
       if (groupFilterActive && myPos && user && p.userId !== user.id) {
         inGroupRange = haversineKm(myPos, { lat: p.lat, lng: p.lng }) <= GROUP_PEER_NEARBY_KM
@@ -893,7 +1002,23 @@ export function MapDashboardPage() {
         inGroupRange,
       }
     })
-  }, [participants, mapGroupFilter, myPos, user])
+    if (!user || !showSelfMarker) return base
+    const selfLatLng =
+      myPos ?? (gpsTestMode && testGpsPosition ? testGpsPosition : gpsTestMode ? BERLIN_CENTER_DEG : null)
+    if (!selfLatLng) return base
+    if (base.some((m) => m.userId === user.id)) return base
+    return [
+      {
+        userId: user.id,
+        displayName: user.displayName,
+        mapIcon: normalizeMapIconId(user.mapIcon),
+        lat: selfLatLng.lat,
+        lng: selfLatLng.lng,
+        inGroupRange: undefined,
+      },
+      ...base,
+    ]
+  }, [participants, mapGroupFilter, myPos, user, showSelfMarker, gpsTestMode, testGpsPosition])
 
   const tollVehicleResolved = useMemo(
     () => resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon),
@@ -905,6 +1030,73 @@ export function MapDashboardPage() {
     if (tollVehicleResolved === 'heavy') return 'Schwer / Nutzfahrzeug'
     return 'Sonstiges'
   }, [tollVehicleResolved])
+
+  async function openVignetteServiceModal() {
+    if (!token) {
+      navigate('/login')
+      return
+    }
+    if (!tollAdvice?.countries?.length) return
+    setVignetteMsg(null)
+    setVignetteModalOpen(true)
+    setVignetteBusy(true)
+    try {
+      const { products } = await fetchVignetteServiceProducts()
+      setVignetteCatalog(products)
+      const codes = new Set(tollAdvice.countries.map((c) => c.code))
+      const vc = tollAdvice.vehicleClass
+      const el = products.filter(
+        (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
+      )
+      setVignetteSelected(el.map((p) => p.id))
+      if (el.length === 0) {
+        setVignetteMsg('Für die ermittelten Länder gibt es noch keine buchbaren Service-Produkte (Admin-Pflege).')
+      }
+    } catch (e) {
+      setVignetteMsg(e instanceof Error ? e.message : 'Katalog konnte nicht geladen werden.')
+    } finally {
+      setVignetteBusy(false)
+    }
+  }
+
+  async function submitVignetteOrderRequest() {
+    if (!token || !tollAdvice || vignetteSelected.length < 1) return
+    setVignetteBusy(true)
+    setVignetteMsg(null)
+    try {
+      await createVignetteOrderRequest(token, {
+        vehicleClass: tollAdvice.vehicleClass,
+        countries: tollAdvice.countries,
+        routeLabel: navTarget?.label ? `Route nach ${navTarget.label}` : 'Geplante Route',
+        productIds: vignetteSelected,
+        customerNote: vignetteNote.trim(),
+      })
+      setVignetteMsg(
+        'Anfrage gesendet – unser Team meldet sich mit einem Angebot. Nach dem Angebot: Zahlung unter Profil → Vignetten & Maut.',
+      )
+      window.setTimeout(() => {
+        setVignetteModalOpen(false)
+        setVignetteNote('')
+      }, 2200)
+    } catch (e) {
+      setVignetteMsg(e instanceof Error ? e.message : 'Senden fehlgeschlagen.')
+    } finally {
+      setVignetteBusy(false)
+    }
+  }
+
+  function toggleVignetteProduct(id: string) {
+    setVignetteSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const vignetteEligibleInModal = useMemo(() => {
+    if (!tollAdvice?.countries?.length) return []
+    const codes = new Set(tollAdvice.countries.map((c) => c.code))
+    const vc = tollAdvice.vehicleClass
+    return vignetteCatalog.filter(
+      (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
+    )
+  }, [tollAdvice, vignetteCatalog])
 
   const othersCount = user ? participants.filter((p) => p.userId !== user.id).length : participants.length
 
@@ -1108,6 +1300,7 @@ export function MapDashboardPage() {
         <MapLibreMap
           className="h-full w-full [&_.maplibregl-ctrl-top-left]:!mt-2 [&_.maplibregl-ctrl-top-left]:!ml-2 [&_.maplibregl-ctrl-attrib]:!text-[10px] [&_.maplibregl-ctrl-attrib]:!bg-surface-container-lowest/90"
           pois={pois}
+          curatedPlaces={curatedPlaces}
           participants={participantMarkers}
           selfUserId={user?.id ?? null}
           showNavigationControls
@@ -1117,6 +1310,7 @@ export function MapDashboardPage() {
           mapPickTarget={mapPickTarget}
           onPickMapPoint={onPickMapPoint}
           onPoiMarkerClick={onPoiMarkerClick}
+          onCuratedPlaceClick={onCuratedPlaceMarkerClick}
           onParticipantMarkerClick={onParticipantMarkerClick}
           onMoveEnd={onMoveEnd}
           onUserDirectMapInteraction={() => bumpNavPause(28_000)}
@@ -1126,6 +1320,40 @@ export function MapDashboardPage() {
           }}
         />
         <div className="pointer-events-none absolute top-0 left-0 z-[1] h-1 w-full bg-gradient-to-r from-tertiary via-secondary to-tertiary opacity-80" />
+        {!mapPickTarget ? (
+          <div
+            className="pointer-events-auto absolute left-2 z-[8] w-[min(calc(100vw-4.5rem),18rem)] rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/95 p-2 shadow-lg backdrop-blur-md"
+            style={{ bottom: `calc(${BOTTOM_NAV_CSS} + 4.25rem)` }}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">Tipps (Admin)</p>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {(
+                [
+                  { k: '' as const, lab: 'Alle' },
+                  { k: 'accommodation' as const, lab: 'Unterkunft' },
+                  { k: 'restaurant' as const, lab: 'Restaurant' },
+                  { k: 'rest_area' as const, lab: 'Rasthof' },
+                ] as const
+              ).map(({ k, lab }) => (
+                <button
+                  key={k || 'all'}
+                  type="button"
+                  onClick={() => setCuratedCategoryFilter(k)}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                    curatedCategoryFilter === k
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-container-high text-on-surface-variant'
+                  }`}
+                >
+                  {lab}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-on-surface-variant">
+              {curatedPlaces.length} Ort{curatedPlaces.length === 1 ? '' : 'e'} · Marker antippen für Infos & Route
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {!mapPickTarget ? (
@@ -1294,6 +1522,45 @@ export function MapDashboardPage() {
                     )}
                   </div>
                 </div>
+                <div className="mt-3 border-t border-outline-variant/25 pt-3">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">Reise-KI</p>
+                  <p className="mt-0.5 text-[11px] text-on-surface-variant">
+                    Frage zu Route, Ländern oder Maut – nutzt dasselbe Modell wie unter „Routen-Optionen“ (
+                    <code className="rounded bg-surface-container-high px-0.5 text-[10px]">AI_MODEL</code> / API).
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="text"
+                      value={assistantQuestion}
+                      onChange={(e) => setAssistantQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void runAssistantAsk()
+                        }
+                      }}
+                      placeholder="z. B. Wo in Serbien tanken?"
+                      className="min-w-0 flex-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-2 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void runAssistantAsk()}
+                      disabled={assistantLoading}
+                      className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-bold text-on-primary disabled:opacity-50"
+                    >
+                      {assistantLoading ? '…' : 'KI fragen'}
+                    </button>
+                  </div>
+                  {assistantErr ? <p className="mt-1 text-[11px] font-medium text-error">{assistantErr}</p> : null}
+                  {assistantAnswer ? (
+                    <div className="mt-2 max-h-36 overflow-y-auto rounded-lg bg-surface-container-high/60 px-2.5 py-2">
+                      <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-on-surface">{assistantAnswer.answer}</p>
+                      {assistantAnswer.usedModel ? (
+                        <p className="mt-1 text-[9px] text-on-surface-variant">Modell: {assistantAnswer.usedModel}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-outline-variant/20 pt-2">
                   <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
                     <input
@@ -1350,6 +1617,17 @@ export function MapDashboardPage() {
                     className="rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary"
                   >
                     Routen-Optionen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Navigation wirklich beenden? Route und Ziel werden gelöscht.')) {
+                        endNavigation()
+                      }
+                    }}
+                    className="rounded-full border border-error/50 bg-error/10 px-3 py-1 text-xs font-bold text-error"
+                  >
+                    Navigation beenden
                   </button>
                 </div>
               </div>
@@ -1660,13 +1938,27 @@ export function MapDashboardPage() {
                     {routeLoading ? 'Rechne…' : routeGeometry ? 'Route aktualisieren' : 'Route berechnen'}
                   </button>
                   {routeGeometry ? (
-                    <button
-                      type="button"
-                      onClick={clearRoute}
-                      className="rounded-xl border border-outline-variant px-4 py-2.5 text-sm font-bold text-on-surface"
-                    >
-                      Linie ausblenden
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={clearRoute}
+                        className="rounded-xl border border-outline-variant px-4 py-2.5 text-sm font-bold text-on-surface"
+                      >
+                        Linie ausblenden
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm('Navigation beenden? Ziel, Route und Einstellungen auf der Karte werden zurückgesetzt.')) {
+                            endNavigation()
+                            closeNavPanel()
+                          }
+                        }}
+                        className="rounded-xl border border-error/45 bg-error/10 px-4 py-2.5 text-sm font-bold text-error"
+                      >
+                        Navigation beenden
+                      </button>
+                    </>
                   ) : null}
                 </div>
 
@@ -1746,6 +2038,23 @@ export function MapDashboardPage() {
                   ) : null}
                   {tollAdvice?.disclaimer ? (
                     <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{tollAdvice.disclaimer}</p>
+                  ) : null}
+                  {tollAdvice && tollAdvice.countries.length > 0 ? (
+                    <div className="mt-3 rounded-lg border border-primary/25 bg-primary/5 p-2.5">
+                      <p className="text-[11px] font-bold text-on-surface">Vignetten & Maut über uns</p>
+                      <p className="mt-1 text-[10px] leading-snug text-on-surface-variant">
+                        Wir bereiten Kauf/Registrierung vor – Servicepauschale laut Admin-Katalog. Offizielle Gebühren
+                        zzgl. Bearbeitung.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={tollAdviceLoading}
+                        onClick={() => void openVignetteServiceModal()}
+                        className="mt-2 w-full rounded-xl bg-secondary py-2.5 text-xs font-black text-on-secondary disabled:opacity-40"
+                      >
+                        {token ? 'Anfrage mit Route & Ländern senden' : 'Anmelden für Kaufanfrage'}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
 
@@ -1915,6 +2224,15 @@ export function MapDashboardPage() {
                         Zurücksetzen
                       </button>
                     </div>
+                    <p className="mt-3 text-[11px] leading-snug text-amber-950/90 dark:text-amber-50/95">
+                      <span className="font-bold">API-Simulation:</span> Mit{' '}
+                      <code className="rounded bg-black/10 px-1 py-0.5 text-[10px] dark:bg-white/10">SEED_MAP_SIMULATION=true</code>{' '}
+                      starten legt die API fünf Nutzer (E-Mail <code className="text-[10px]">sim-*@yol.local</code>, Passwort{' '}
+                      <code className="text-[10px]">sim123456</code>), drei Gruppen (Einladungscodes{' '}
+                      <code className="text-[10px]">SIMKON01</code>, <code className="text-[10px]">SIMGRE01</code>,{' '}
+                      <code className="text-[10px]">SIMFAM01</code>) und Kartenpositionen um Berlin an. Nach dem Seed mit einem Sim-Account
+                      anmelden und Gruppe per Code beitreten.
+                    </p>
                   </div>
                 ) : null}
 
@@ -1992,6 +2310,17 @@ export function MapDashboardPage() {
                     Grüner Ring: Gruppe in ca. {GROUP_PEER_NEARBY_KM} km – für Nah-Funk im Chat.
                   </p>
                 ) : null}
+              </label>
+            ) : null}
+            {user ? (
+              <label className="mt-2 flex cursor-pointer items-start gap-1.5 border-t border-surface-variant/25 pt-2 text-[11px] font-medium leading-snug">
+                <input
+                  type="checkbox"
+                  checked={showSelfMarker}
+                  onChange={(e) => setShowSelfMarker(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-surface-variant accent-primary"
+                />
+                <span>Mich auf der Karte anzeigen (nur bei dir sichtbar, ohne andere zu informieren)</span>
               </label>
             ) : null}
             {user ? (
@@ -2135,6 +2464,158 @@ export function MapDashboardPage() {
         token={token}
         onRouteToParticipant={onRouteToParticipantFromSheet}
       />
+
+      {curatedSheet ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          role="dialog"
+          aria-modal
+          aria-labelledby="curated-sheet-title"
+        >
+          <div className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 shadow-2xl">
+            <h2 id="curated-sheet-title" className="text-lg font-black text-on-surface">
+              {curatedSheet.name}
+            </h2>
+            <p className="mt-0.5 text-[11px] font-bold uppercase text-primary">
+              {curatedSheet.category === 'accommodation'
+                ? 'Unterkunft'
+                : curatedSheet.category === 'restaurant'
+                  ? 'Restaurant'
+                  : 'Rasthof / Pause'}
+            </p>
+            {curatedSheet.imageUrl?.startsWith('http') ? (
+              <img
+                src={curatedSheet.imageUrl}
+                alt=""
+                className="mt-3 max-h-40 w-full rounded-xl object-cover"
+              />
+            ) : null}
+            {curatedSheet.description ? (
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-on-surface-variant">{curatedSheet.description}</p>
+            ) : null}
+            <div className="mt-3 space-y-1 text-xs text-on-surface-variant">
+              {[curatedSheet.address, curatedSheet.region].filter(Boolean).join(' · ') ? (
+                <p>{[curatedSheet.address, curatedSheet.region].filter(Boolean).join(' · ')}</p>
+              ) : null}
+              {curatedSheet.phone ? <p>Tel.: {curatedSheet.phone}</p> : null}
+              {curatedSheet.website?.startsWith('http') ? (
+                <a
+                  href={curatedSheet.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-bold text-primary underline"
+                >
+                  Webseite
+                </a>
+              ) : null}
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => navigateToCuratedPlace(curatedSheet)}
+                disabled={routeLoading}
+                className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-on-primary disabled:opacity-40"
+              >
+                Route hierhin
+              </button>
+              <button
+                type="button"
+                onClick={() => setCuratedSheet(null)}
+                className="flex-1 rounded-xl border border-outline-variant py-3 text-sm font-bold text-on-surface"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {vignetteModalOpen && tollAdvice ? (
+        <div
+          className="fixed inset-0 z-[75] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          role="dialog"
+          aria-modal
+          aria-labelledby="vignette-modal-title"
+        >
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 shadow-2xl">
+            <h2 id="vignette-modal-title" className="text-lg font-black text-on-surface">
+              Vignetten-Service
+            </h2>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              Route: {tollAdvice.countries.map((c) => c.name).join(' → ')} · Fahrzeug: {tollVehicleLabel}
+            </p>
+            {vignetteBusy && vignetteEligibleInModal.length === 0 ? (
+              <p className="mt-3 text-sm text-on-surface-variant">Katalog wird geladen…</p>
+            ) : null}
+            <div className="mt-3 space-y-2">
+              {vignetteEligibleInModal.map((p) => (
+                <label
+                  key={p.id}
+                  className="flex cursor-pointer gap-3 rounded-xl border border-outline-variant/50 bg-surface-container-high/40 p-3"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                    checked={vignetteSelected.includes(p.id)}
+                    onChange={() => toggleVignetteProduct(p.id)}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-on-surface">{p.title}</p>
+                    <p className="text-[11px] text-on-surface-variant">
+                      {p.countryCode} · {p.kind === 'vignette' ? 'Vignette' : p.kind === 'toll' ? 'Maut' : 'Info'}
+                      {p.retailHintEur != null ? ` · ab ca. ${p.retailHintEur.toFixed(2)} €` : ''}
+                      {` · Service ${p.serviceFeeEur.toFixed(2)} €`}
+                    </p>
+                    {p.description ? (
+                      <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
+                    ) : null}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <label className="mt-3 block text-[11px] font-bold text-on-surface-variant">Hinweis an uns (optional)</label>
+            <textarea
+              value={vignetteNote}
+              onChange={(e) => setVignetteNote(e.target.value)}
+              className="mt-1 min-h-[4rem] w-full rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
+              maxLength={2000}
+              placeholder="z. B. Gültigkeit 10 Tage, Kennzeichen …"
+            />
+            {vignetteMsg ? (
+              <p
+                className={`mt-2 rounded-lg px-2 py-1.5 text-xs font-medium ${
+                  vignetteMsg.startsWith('Anfrage gesendet')
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-error-container text-on-error-container'
+                }`}
+              >
+                {vignetteMsg}
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                disabled={vignetteBusy || vignetteSelected.length < 1}
+                onClick={() => void submitVignetteOrderRequest()}
+                className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-on-primary disabled:opacity-40"
+              >
+                {vignetteBusy ? '…' : 'Anfrage senden'}
+              </button>
+              <button
+                type="button"
+                disabled={vignetteBusy}
+                onClick={() => {
+                  setVignetteModalOpen(false)
+                  setVignetteMsg(null)
+                }}
+                className="flex-1 rounded-xl border border-outline-variant py-3 text-sm font-bold text-on-surface"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   )
 }

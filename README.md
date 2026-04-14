@@ -10,6 +10,29 @@ Monorepo-ähnliche Struktur:
 | [`docs/`](docs/) | [PRODUCT.md](docs/PRODUCT.md), Stack, MVP, Spezifikationen |
 | [`infra/`](infra/) | Docker & Dienste |
 
+## Alles neu kompilieren & Docker neu starten
+
+Im Repository-Root (neben `docker-compose.yml`):
+
+```bash
+chmod +x scripts/restart-rebuild-all.sh scripts/docker-full-rebuild.sh
+./scripts/restart-rebuild-all.sh          # api+app: npm ci + build, dann docker-compose.yml
+./scripts/restart-rebuild-all.sh prod     # dasselbe für docker-compose.prod.yml
+```
+
+- **`restart-rebuild-all.sh`:** lokales **`npm ci` + `npm run build`** in `api/` und `app/`, danach **`docker compose down`**, **`build --no-cache`**, **`up -d`**.  
+  Nur Docker ohne lokales npm: `SKIP_LOCAL_NPM=1 ./scripts/restart-rebuild-all.sh`  
+  Nur lokale Builds ohne Docker: `SKIP_DOCKER=1 ./scripts/restart-rebuild-all.sh`
+
+**Nur Docker** (ohne lokales npm im Repo):
+
+```bash
+./scripts/docker-full-rebuild.sh          # docker-compose.yml
+./scripts/docker-full-rebuild.sh prod     # docker-compose.prod.yml
+```
+
+Entspricht `docker compose down`, `build --no-cache` und `up -d --force-recreate`.
+
 ## Voller lokaler Start (UI + API + DB)
 
 ```bash
@@ -23,6 +46,7 @@ cd app && npm install && npm run dev
 - Web: **http://localhost:5173**  
 - API: **http://localhost:4000/api/health**  
 - Erster Start: API legt Tabellen an (`INIT_DB=true`) und seedet Grenze `horgos`.
+- **Karten-Simulation (optional):** In `api/.env` zusätzlich `SEED_MAP_SIMULATION=true` setzen und API starten. Es werden fünf Nutzer (`sim-anna@yol.local` … `sim-elif@yol.local`, Passwort `sim123456`), drei Gruppen (Codes `SIMKON01`, `SIMGRE01`, `SIMFAM01`) und Live-Positionen um Berlin angelegt. In der App (Testmodus) steht derselbe Hinweis im Routen-Panel.
 
 **Nur UI gegen lokale API ohne Docker-API:** Postgres per Docker, API manuell:
 
@@ -33,6 +57,10 @@ cd app && npm run dev
 ```
 
 (`api/.env`: `DATABASE_URL=postgresql://yol:yol_dev_change_me@localhost:5432/yol`, `JWT_SECRET` min. 16 Zeichen.)
+
+**Vignetten:** Optional `STRIPE_SECRET_KEY`, `PUBLIC_WEB_APP_URL` (Checkout-Redirect), SMTP + `MAIL_FROM` + `VIGNETTE_ADMIN_EMAIL` – siehe `api/.env.example`. Ohne Stripe zeigt das Profil Anfragen ohne „Jetzt bezahlen“; ohne SMTP werden E-Mails nur geloggt.
+
+**KI:** Für Navigation und Gruppenchat setze `AI_API_KEY` und optional `AI_MODEL` / `AI_BASE_URL` (OpenAI-kompatibel). Ohne Key antwortet die API mit einer statischen Fallback-Zusammenfassung. Gruppen-KI liest Textnachrichten und optional gespeicherte frühere KI-Antworten (`assistant_memory`, automatisch angelegt).
 
 ## Produktion / Live-Tests (DigitalOcean & Co.)
 

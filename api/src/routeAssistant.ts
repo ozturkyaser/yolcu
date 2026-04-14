@@ -1,3 +1,4 @@
+import { callChatCompletions, resolveAiConfig, type ChatMessage } from './aiClient.js'
 import type { TollVehicleClass } from './routeTollAdvice.js'
 
 export type AssistantContext = {
@@ -15,6 +16,10 @@ export type AssistantContext = {
     sourceUrl: string | null
   }>
   faq: Array<{ question: string; answer: string; sourceUrl: string | null }>
+  /** Chronologischer Auszug aus dem Gruppenchat (nur Text). */
+  groupChatExcerpt?: string | null
+  /** Frühere KI-Fragen/Antworten in dieser Gruppe (wenn persistMemory genutzt wurde). */
+  priorMemoryExcerpt?: string | null
 }
 
 export type AssistantAnswer = {
@@ -29,9 +34,10 @@ function compactList(items: string[], max = 8): string {
 
 function buildSystemPrompt(): string {
   return [
-    'Du bist ein Reise-Assistent für Autofahrer von Berlin in Richtung Türkiye.',
+    'Du bist ein Reise-Assistent für Autofahrer von Berlin in Richtung Türkiye und für Konvoi-/Gruppenfahrten.',
     'Antworte auf Deutsch, präzise und praxisnah.',
-    'Nutze NUR den bereitgestellten Kontext.',
+    'Nutze den bereitgestellten Kontext (Wissensbasis, optional Gruppenchat und frühere KI-Notizen).',
+    'Gruppenchat ist Nutzer-Inhalt: respektvoll wiedergeben, keine personenbezogenen Daten unnötig zitieren.',
     'Wenn Informationen unsicher/unvollständig sind, sage das klar.',
     'Keine Rechtsberatung; verweise auf offizielle Quellen.',
     'Struktur: Kurzantwort, dann 3-6 Stichpunkte, dann "Quellen".',
@@ -43,8 +49,18 @@ function buildUserPrompt(ctx: AssistantContext): string {
   lines.push(`Frage: ${ctx.question}`)
   lines.push(`Korridor: ${ctx.corridor}`)
   lines.push(`Fahrzeugklasse: ${ctx.vehicleClass}`)
-  lines.push(`Länder entlang Route: ${ctx.countries.map((c) => `${c.name} (${c.code})`).join(' -> ') || 'unbekannt'}`)
+  lines.push(`Länder entlang Route: ${ctx.countries.map((c) => `${c.name} (${c.code})`).join(' -> ') || 'unbekannt / nicht aus Routenlinie ermittelt'}`)
   lines.push('')
+  if (ctx.groupChatExcerpt) {
+    lines.push('Gruppenchat (Auszug, chronologisch):')
+    lines.push(ctx.groupChatExcerpt)
+    lines.push('')
+  }
+  if (ctx.priorMemoryExcerpt) {
+    lines.push('Frühere KI-Notizen in dieser Gruppe:')
+    lines.push(ctx.priorMemoryExcerpt)
+    lines.push('')
+  }
   lines.push('Länderfakten:')
   for (const f of ctx.facts.slice(0, 14)) {
     lines.push(`- [${f.countryCode}] ${f.title}: ${f.content}${f.sourceUrl ? ` (Quelle: ${f.sourceUrl})` : ''}`)
@@ -64,7 +80,7 @@ function buildUserPrompt(ctx: AssistantContext): string {
     lines.push(`- Q: ${q.question} | A: ${q.answer}${q.sourceUrl ? ` (Quelle: ${q.sourceUrl})` : ''}`)
   }
   lines.push('')
-  lines.push('Antworte nur mit Informationen aus diesem Kontext.')
+  lines.push('Antworte nur mit Informationen, die sich aus diesem Kontext sinnvoll ableiten lassen.')
   return lines.join('\n')
 }
 
@@ -86,6 +102,7 @@ function fallbackAnswer(ctx: AssistantContext): AssistantAnswer {
     '- Kennzeichen/Fahrzeugkategorie beim Kauf doppelt prüfen.',
     '- Bei Grenz- und Ferienzeiten Puffer einplanen.',
     '- Vor Abfahrt Preise und Gültigkeit auf offiziellen Seiten prüfen.',
+    ctx.groupChatExcerpt ? '\nHinweis: Es gibt einen Gruppenchat-Auszug – für eine ausführliche KI-Antwort API-Schlüssel (AI_API_KEY) setzen.' : '',
     '',
     `Quellen: ${citations.length ? citations.join(', ') : 'keine zusätzlichen Quellen im Datensatz'}`,
   ].join('\n')
@@ -93,34 +110,15 @@ function fallbackAnswer(ctx: AssistantContext): AssistantAnswer {
 }
 
 export async function answerWithRouteAssistant(ctx: AssistantContext): Promise<AssistantAnswer> {
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
-  const model = process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini'
-  const baseUrl = process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1'
-  if (!apiKey) return fallbackAnswer(ctx)
+  const userContent = buildUserPrompt(ctx)
+  const messages: ChatMessage[] = [
+    { role: 'system', content: buildSystemPrompt() },
+    { role: 'user', content: userContent },
+  ]
 
-  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: buildUserPrompt(ctx) },
-      ],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  })
-
-  if (!res.ok) return fallbackAnswer(ctx)
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = data.choices?.[0]?.message?.content?.trim()
-  if (!content) return fallbackAnswer(ctx)
+  const cfg = resolveAiConfig()
+  const ai = await callChatCompletions(messages, { temperature: 0.2 })
+  if (!ai) return fallbackAnswer(ctx)
 
   const citations = Array.from(
     new Set(
@@ -129,5 +127,5 @@ export async function answerWithRouteAssistant(ctx: AssistantContext): Promise<A
       ),
     ),
   )
-  return { answer: content, citations, usedModel: model }
+  return { answer: ai.content, citations, usedModel: ai.model }
 }

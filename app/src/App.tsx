@@ -11,6 +11,8 @@ import { RegisterPage } from './pages/RegisterPage'
 import { LegalPage } from './pages/LegalPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { GroupChatPage } from './pages/GroupChatPage'
+import { RideMarketplacePage } from './pages/RideMarketplacePage'
+import { AdminSection } from './admin/AdminSection'
 
 export default function App() {
   return (
@@ -24,11 +26,13 @@ export default function App() {
         <Route path="/" element={<ShellLayout />}>
           <Route index element={<MapDashboardPage />} />
           <Route path="community" element={<CommunityFeedPage />} />
+          <Route path="rides" element={<RideMarketplacePage />} />
           <Route path="groups" element={<GroupsPage />} />
           <Route path="groups/:id" element={<GroupChatPage />} />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
         <Route path="/border/:slug" element={<BorderDetailPage />} />
+        <Route path="/admin/*" element={<AdminSection />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

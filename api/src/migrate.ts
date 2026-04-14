@@ -55,6 +55,208 @@ async function ensureTollVehicleClassColumn(): Promise<void> {
   `)
 }
 
+async function ensureUserRoleColumn(): Promise<void> {
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`)
+  await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`)
+  await pool.query(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))`)
+  await pool.query(`UPDATE users SET role = 'admin' WHERE email = 'test@yol.local'`)
+}
+
+async function ensureCuratedPlacesTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS curated_places (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area')),
+      name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
+      description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 4000),
+      lat DOUBLE PRECISION NOT NULL,
+      lng DOUBLE PRECISION NOT NULL,
+      address TEXT NOT NULL DEFAULT '' CHECK (char_length(address) <= 400),
+      region TEXT NOT NULL DEFAULT '' CHECK (char_length(region) <= 160),
+      phone TEXT NOT NULL DEFAULT '' CHECK (char_length(phone) <= 80),
+      website TEXT NOT NULL DEFAULT '' CHECK (char_length(website) <= 500),
+      image_url TEXT NOT NULL DEFAULT '' CHECK (char_length(image_url) <= 800),
+      is_published BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS curated_places_category_idx ON curated_places (category)`,
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS curated_places_published_sort_idx ON curated_places (is_published, sort_order DESC, created_at DESC)`,
+  )
+}
+
+async function ensureVignetteServiceTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vignette_service_products (
+      id TEXT PRIMARY KEY,
+      country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+      vehicle_class TEXT NOT NULL DEFAULT 'car' CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other', 'all')),
+      kind TEXT NOT NULL DEFAULT 'vignette' CHECK (kind IN ('vignette', 'toll', 'info')),
+      title TEXT NOT NULL CHECK (char_length(title) >= 1 AND char_length(title) <= 200),
+      description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 2000),
+      official_url TEXT NOT NULL DEFAULT '' CHECK (char_length(official_url) <= 800),
+      partner_checkout_url TEXT NOT NULL DEFAULT '' CHECK (char_length(partner_checkout_url) <= 800),
+      retail_hint_eur NUMERIC(10, 2),
+      service_fee_eur NUMERIC(10, 2) NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS vignette_service_products_country_idx ON vignette_service_products (country_code)`,
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS vignette_service_products_active_idx ON vignette_service_products (is_active)`,
+  )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vignette_order_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'in_review', 'quoted', 'paid', 'fulfilled', 'cancelled')
+      ),
+      vehicle_class TEXT NOT NULL CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')),
+      countries_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      route_label TEXT NOT NULL DEFAULT '' CHECK (char_length(route_label) <= 400),
+      selected_product_ids TEXT[] NOT NULL DEFAULT '{}',
+      customer_note TEXT NOT NULL DEFAULT '' CHECK (char_length(customer_note) <= 2000),
+      admin_note TEXT NOT NULL DEFAULT '' CHECK (char_length(admin_note) <= 2000),
+      quoted_total_eur NUMERIC(10, 2),
+      stripe_checkout_session_id TEXT,
+      paid_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS vignette_order_requests_created_idx ON vignette_order_requests (created_at DESC)`,
+  )
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS vignette_order_requests_status_idx ON vignette_order_requests (status)`,
+  )
+}
+
+async function ensureVignetteOrderPaymentColumns(): Promise<void> {
+  const t = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'vignette_order_requests'
+     ) AS ok`,
+  )
+  if (!t.rows[0]?.ok) return
+  await pool.query(
+    `ALTER TABLE vignette_order_requests ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT`,
+  )
+  await pool.query(`ALTER TABLE vignette_order_requests ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`)
+}
+
+async function seedVignetteServiceProductsIfEmpty(): Promise<void> {
+  const c = await pool.query(`SELECT COUNT(*)::int AS n FROM vignette_service_products`)
+  if ((c.rows[0]?.n ?? 0) > 0) return
+  await pool.query(
+    `INSERT INTO vignette_service_products (id, country_code, vehicle_class, kind, title, description, official_url, partner_checkout_url, retail_hint_eur, service_fee_eur, sort_order)
+     VALUES
+       ('svc-at-car', 'AT', 'car', 'vignette', 'Österreich – Digitale Vignette (Pkw)',
+        'Hinweis: Endpreis zzgl. Servicepauschale; finale Abwicklung durch Team.', 'https://www.asfinag.at/en/toll/vignette/', '', NULL, 4.99, 20),
+       ('svc-hu-car', 'HU', 'car', 'vignette', 'Ungarn – e-Matrica',
+        'Digitale Vignette; Fahrzeugklasse beim Kauf beachten.', 'https://nemzetiutdij.hu/', '', NULL, 4.99, 18),
+       ('svc-bg-car', 'BG', 'car', 'vignette', 'Bulgarien – E-Vignette',
+        'Vor Nutzung mautpflichtiger Strecken aktivieren.', 'https://web.bgtoll.bg/', '', NULL, 4.99, 15),
+       ('svc-si-car', 'SI', 'car', 'vignette', 'Slowenien – Vignette',
+        'Digitale Vignette für Pkw.', 'https://evinjeta.dars.si/', '', NULL, 4.99, 12),
+       ('svc-sk-car', 'SK', 'car', 'vignette', 'Slowakei – elektronische Vignette',
+        'E-Vignette nach Kategorie.', 'https://eznamka.sk/', '', NULL, 4.99, 12),
+       ('svc-cz-car', 'CZ', 'car', 'vignette', 'Tschechien – elektronische Vignette',
+        'E-Vignette.', 'https://edalnice.cz/', '', NULL, 4.99, 12),
+       ('svc-ch-car', 'CH', 'car', 'vignette', 'Schweiz – Autobahnvignette',
+        'Physische oder digitale Vignette je nach Angebot prüfen.', 'https://www.ch.ch/de/strassenverkehr/autobahn-und-verkehrsvignette/', '', NULL, 6.99, 10)
+     ON CONFLICT (id) DO NOTHING`,
+  )
+}
+
+async function seedCuratedPlacesIfEmpty(): Promise<void> {
+  const c = await pool.query(`SELECT COUNT(*)::int AS n FROM curated_places`)
+  if ((c.rows[0]?.n ?? 0) > 0) return
+  await pool.query(
+    `INSERT INTO curated_places (id, category, name, description, lat, lng, address, region, phone, website, image_url, is_published, sort_order)
+     VALUES
+       ('a0000001-0001-4000-8000-000000000001', 'accommodation', 'Beispiel Unterkunft (Berlin)',
+        'Redaktioneller Tipp – ersetzen oder löschen im Admin-Panel.', 52.5208, 13.4094,
+        'Musterstraße 1', 'Berlin', '', '', '', true, 10),
+       ('a0000001-0001-4000-8000-000000000002', 'restaurant', 'Beispiel Restaurant an der Strecke',
+        'Redaktioneller Tipp für Reisende Richtung Süden.', 52.4986, 13.4033,
+        'Nahe A100', 'Berlin', '', '', '', true, 5),
+       ('a0000001-0001-4000-8000-000000000003', 'rest_area', 'Beispiel Rasthof / Pause',
+        'Tanken, Toilette, kurze Pause – Inhalt im Admin-Panel anpassen.', 52.4514, 13.5112,
+        'Autobahn-Umfeld', 'Berlin Süd', '', '', '', true, 0)
+     ON CONFLICT (id) DO NOTHING`,
+  )
+}
+
+async function ensureRideShareMarketplaceTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ride_listings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      offer_kind TEXT NOT NULL CHECK (offer_kind IN ('passenger', 'cargo', 'both')),
+      route_from TEXT NOT NULL CHECK (char_length(route_from) >= 1 AND char_length(route_from) <= 200),
+      route_to TEXT NOT NULL CHECK (char_length(route_to) >= 1 AND char_length(route_to) <= 200),
+      departure_note TEXT NOT NULL DEFAULT '' CHECK (char_length(departure_note) <= 500),
+      free_seats SMALLINT CHECK (free_seats IS NULL OR (free_seats >= 0 AND free_seats <= 12)),
+      cargo_space_note TEXT NOT NULL DEFAULT '' CHECK (char_length(cargo_space_note) <= 500),
+      details TEXT NOT NULL CHECK (char_length(details) >= 1 AND char_length(details) <= 2000),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS ride_listings_created_idx ON ride_listings (created_at DESC)`,
+  )
+  await pool.query(`CREATE INDEX IF NOT EXISTS ride_listings_status_idx ON ride_listings (status)`)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ride_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id UUID NOT NULL REFERENCES ride_listings (id) ON DELETE CASCADE,
+      requester_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      request_kind TEXT NOT NULL CHECK (request_kind IN ('passenger', 'cargo')),
+      message TEXT NOT NULL DEFAULT '' CHECK (char_length(message) <= 800),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'withdrawn', 'accepted', 'declined')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS ride_requests_listing_idx ON ride_requests (listing_id, created_at DESC)`,
+  )
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ride_requests_one_pending_per_user
+      ON ride_requests (listing_id, requester_id)
+      WHERE status = 'pending'
+  `)
+}
+
+async function ensureAssistantMemoryTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS assistant_memory (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      group_id UUID NOT NULL REFERENCES groups (id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      question TEXT NOT NULL CHECK (char_length(question) >= 1 AND char_length(question) <= 2000),
+      answer TEXT NOT NULL CHECK (char_length(answer) >= 1 AND char_length(answer) <= 8000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS assistant_memory_group_created_idx ON assistant_memory (group_id, created_at DESC)`,
+  )
+}
+
 async function ensureKnowledgeBaseTables(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS kb_country_facts (
@@ -193,6 +395,20 @@ export async function ensureAuthSchemaPatches(): Promise<void> {
   if (!t.rows[0]?.ok) return
   await ensureMapIconColumn()
   await ensureTollVehicleClassColumn()
+  const g = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'groups'
+     ) AS ok`,
+  )
+  if (g.rows[0]?.ok) await ensureAssistantMemoryTable()
+  await ensureRideShareMarketplaceTables()
+  await ensureUserRoleColumn()
+  await ensureCuratedPlacesTable()
+  await seedCuratedPlacesIfEmpty()
+  await ensureVignetteServiceTables()
+  await ensureVignetteOrderPaymentColumns()
+  await seedVignetteServiceProductsIfEmpty()
 }
 
 export async function runMigrations(): Promise<void> {
@@ -203,6 +419,14 @@ export async function runMigrations(): Promise<void> {
   await ensureTollVehicleClassColumn()
   await ensureKnowledgeBaseTables()
   await ensureRoadAndConvoyExtensions()
+  await ensureAssistantMemoryTable()
+  await ensureRideShareMarketplaceTables()
+  await ensureUserRoleColumn()
+  await ensureCuratedPlacesTable()
+  await seedCuratedPlacesIfEmpty()
+  await ensureVignetteServiceTables()
+  await ensureVignetteOrderPaymentColumns()
+  await seedVignetteServiceProductsIfEmpty()
   await seedBerlinTurkeyKnowledgeBase()
 
   await pool.query(

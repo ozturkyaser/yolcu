@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   ),
   stats_km INTEGER NOT NULL DEFAULT 0,
   stats_regions INTEGER NOT NULL DEFAULT 0,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -205,3 +206,102 @@ CREATE TABLE IF NOT EXISTS kb_route_faq (
   source_url TEXT,
   verified_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Mitfahrt / Ware: Marktplatz
+CREATE TABLE IF NOT EXISTS ride_listings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  offer_kind TEXT NOT NULL CHECK (offer_kind IN ('passenger', 'cargo', 'both')),
+  route_from TEXT NOT NULL CHECK (char_length(route_from) >= 1 AND char_length(route_from) <= 200),
+  route_to TEXT NOT NULL CHECK (char_length(route_to) >= 1 AND char_length(route_to) <= 200),
+  departure_note TEXT NOT NULL DEFAULT '' CHECK (char_length(departure_note) <= 500),
+  free_seats SMALLINT CHECK (free_seats IS NULL OR (free_seats >= 0 AND free_seats <= 12)),
+  cargo_space_note TEXT NOT NULL DEFAULT '' CHECK (char_length(cargo_space_note) <= 500),
+  details TEXT NOT NULL CHECK (char_length(details) >= 1 AND char_length(details) <= 2000),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ride_listings_created_idx ON ride_listings (created_at DESC);
+CREATE INDEX IF NOT EXISTS ride_listings_status_idx ON ride_listings (status);
+
+CREATE TABLE IF NOT EXISTS ride_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  listing_id UUID NOT NULL REFERENCES ride_listings (id) ON DELETE CASCADE,
+  requester_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  request_kind TEXT NOT NULL CHECK (request_kind IN ('passenger', 'cargo')),
+  message TEXT NOT NULL DEFAULT '' CHECK (char_length(message) <= 800),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'withdrawn', 'accepted', 'declined')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ride_requests_listing_idx ON ride_requests (listing_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ride_requests_one_pending_per_user
+  ON ride_requests (listing_id, requester_id)
+  WHERE status = 'pending';
+
+-- Admin gepflegte Tipps: Unterkunft, Restaurant, Rasthof (Karte + Navigation)
+CREATE TABLE IF NOT EXISTS curated_places (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area')),
+  name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
+  description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 4000),
+  lat DOUBLE PRECISION NOT NULL,
+  lng DOUBLE PRECISION NOT NULL,
+  address TEXT NOT NULL DEFAULT '' CHECK (char_length(address) <= 400),
+  region TEXT NOT NULL DEFAULT '' CHECK (char_length(region) <= 160),
+  phone TEXT NOT NULL DEFAULT '' CHECK (char_length(phone) <= 80),
+  website TEXT NOT NULL DEFAULT '' CHECK (char_length(website) <= 500),
+  image_url TEXT NOT NULL DEFAULT '' CHECK (char_length(image_url) <= 800),
+  is_published BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS curated_places_category_idx ON curated_places (category);
+CREATE INDEX IF NOT EXISTS curated_places_published_sort_idx ON curated_places (is_published, sort_order DESC, created_at DESC);
+
+-- Vignetten-/Maut-Service: verkaufbare Positionen (Admin) + Kundenanfragen
+CREATE TABLE IF NOT EXISTS vignette_service_products (
+  id TEXT PRIMARY KEY,
+  country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+  vehicle_class TEXT NOT NULL DEFAULT 'car' CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other', 'all')),
+  kind TEXT NOT NULL DEFAULT 'vignette' CHECK (kind IN ('vignette', 'toll', 'info')),
+  title TEXT NOT NULL CHECK (char_length(title) >= 1 AND char_length(title) <= 200),
+  description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 2000),
+  official_url TEXT NOT NULL DEFAULT '' CHECK (char_length(official_url) <= 800),
+  partner_checkout_url TEXT NOT NULL DEFAULT '' CHECK (char_length(partner_checkout_url) <= 800),
+  retail_hint_eur NUMERIC(10, 2),
+  service_fee_eur NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS vignette_service_products_country_idx ON vignette_service_products (country_code);
+CREATE INDEX IF NOT EXISTS vignette_service_products_active_idx ON vignette_service_products (is_active);
+
+CREATE TABLE IF NOT EXISTS vignette_order_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'in_review', 'quoted', 'paid', 'fulfilled', 'cancelled')
+  ),
+  vehicle_class TEXT NOT NULL CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')),
+  countries_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  route_label TEXT NOT NULL DEFAULT '' CHECK (char_length(route_label) <= 400),
+  selected_product_ids TEXT[] NOT NULL DEFAULT '{}',
+  customer_note TEXT NOT NULL DEFAULT '' CHECK (char_length(customer_note) <= 2000),
+  admin_note TEXT NOT NULL DEFAULT '' CHECK (char_length(admin_note) <= 2000),
+  quoted_total_eur NUMERIC(10, 2),
+  stripe_checkout_session_id TEXT,
+  paid_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS vignette_order_requests_created_idx ON vignette_order_requests (created_at DESC);
+CREATE INDEX IF NOT EXISTS vignette_order_requests_status_idx ON vignette_order_requests (status);

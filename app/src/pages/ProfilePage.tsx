@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { apiFetch, type TollVehicleClass, type VehicleDto } from '../lib/api'
+import { Link, useSearchParams } from 'react-router-dom'
+import {
+  apiFetch,
+  confirmVignetteStripeCheckout,
+  createVignetteStripeCheckoutSession,
+  fetchMyVignetteOrderRequests,
+  type MyVignetteOrderDto,
+  type TollVehicleClass,
+  type VehicleDto,
+} from '../lib/api'
 import { MAP_MAP_ICON_OPTIONS, normalizeMapIconId, type MapMapIconId } from '../lib/mapIcons'
 import { useAuth } from '../context/AuthContext'
 
 export function ProfilePage() {
   const { token, user, loading: authLoading, logout, refreshMe } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [vehicles, setVehicles] = useState<VehicleDto[]>([])
   const [displayName, setDisplayName] = useState('')
   const [mapIcon, setMapIcon] = useState<MapMapIconId>('person')
@@ -16,6 +25,9 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [vignetteOrders, setVignetteOrders] = useState<MyVignetteOrderDto[]>([])
+  const [vignetteLoading, setVignetteLoading] = useState(false)
+  const [vignettePayBusy, setVignettePayBusy] = useState<string | null>(null)
 
   useEffect(() => {
     if (!token) {
@@ -44,6 +56,62 @@ export function ProfilePage() {
       }
     })()
   }, [token])
+
+  useEffect(() => {
+    if (!token) {
+      setVignetteOrders([])
+      return
+    }
+    void (async () => {
+      setVignetteLoading(true)
+      try {
+        const { requests } = await fetchMyVignetteOrderRequests(token)
+        setVignetteOrders(requests)
+      } catch {
+        /* still show profile */
+      } finally {
+        setVignetteLoading(false)
+      }
+    })()
+  }, [token])
+
+  useEffect(() => {
+    const checkout = searchParams.get('vignetteCheckout')
+    const sessionId = searchParams.get('session_id')
+    if (!token || checkout !== 'success' || !sessionId) return
+    let cancelled = false
+    void (async () => {
+      setMsg(null)
+      try {
+        await confirmVignetteStripeCheckout(token, sessionId)
+        if (!cancelled) {
+          setMsg('Zahlung bestätigt – vielen Dank!')
+          const { requests } = await fetchMyVignetteOrderRequests(token)
+          setVignetteOrders(requests)
+        }
+      } catch (e) {
+        if (!cancelled) setMsg(e instanceof Error ? e.message : 'Zahlungsbestätigung fehlgeschlagen.')
+      } finally {
+        if (!cancelled) {
+          const next = new URLSearchParams(searchParams)
+          next.delete('vignetteCheckout')
+          next.delete('session_id')
+          setSearchParams(next, { replace: true })
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, searchParams, setSearchParams])
+
+  useEffect(() => {
+    if (searchParams.get('vignetteCheckout') !== 'cancel') return
+    setMsg('Zahlung abgebrochen.')
+    const next = new URLSearchParams(searchParams)
+    next.delete('vignetteCheckout')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   if (authLoading || (token && loading)) {
     return (
@@ -115,6 +183,14 @@ export function ProfilePage() {
           </div>
           <h2 className="font-sans text-2xl font-extrabold tracking-tight">{user.displayName}</h2>
           <p className="font-sans text-xs uppercase tracking-widest text-on-surface-variant">{user.email}</p>
+          {user.role === 'admin' ? (
+            <Link
+              to="/admin"
+              className="mt-3 inline-flex items-center justify-center rounded-xl bg-inverse-surface px-4 py-2 text-xs font-black uppercase tracking-wide text-inverse-on-surface"
+            >
+              Admin-Panel
+            </Link>
+          ) : null}
           <button
             type="button"
             onClick={logout}
@@ -240,22 +316,72 @@ export function ProfilePage() {
 
       <section>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">Vignetten &amp; Maut</h3>
+          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">Vignetten & Maut</h3>
           <Link to="/legal/privacy" className="text-xs font-bold text-primary">
             Datenschutz
           </Link>
         </div>
         <div className="rounded-xl bg-surface-container-low px-6 py-5 text-sm leading-relaxed text-on-surface-variant">
           <p>
-            Nach einer berechneten Route siehst du auf der{' '}
+            Nach einer berechneten Route kannst du auf der{' '}
             <Link to="/" className="font-bold text-primary underline">
               Karte
             </Link>{' '}
-            automatisch die durchfahrenen Länder und passende offizielle Kauf-/Info-Links (Vignette, Maut).
+            eine Service-Anfrage senden. Nach unserem Angebot kannst du hier per Stripe bezahlen (wenn die API
+            dafür konfiguriert ist).
           </p>
-          <p className="mt-2 text-xs">
-            Es werden keine Zahlungen in der App abgewickelt – du wirst zu den jeweiligen Anbietern weitergeleitet.
-          </p>
+        </div>
+        <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-4 py-4">
+          <p className="text-xs font-bold uppercase text-on-surface-variant">Deine Anfragen</p>
+          {vignetteLoading ? (
+            <p className="mt-2 text-sm text-on-surface-variant">Laden…</p>
+          ) : vignetteOrders.length === 0 ? (
+            <p className="mt-2 text-sm text-on-surface-variant">Noch keine Anfragen.</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {vignetteOrders.map((o) => (
+                <li
+                  key={o.id}
+                  className="flex flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-high/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-bold text-on-surface">{o.routeLabel || 'Route'}</p>
+                    <p className="text-[11px] uppercase text-primary">{o.status}</p>
+                    <p className="text-xs text-on-surface-variant">
+                      {new Date(o.createdAt).toLocaleString('de-DE')}
+                      {o.paidAt ? ` · bezahlt ${new Date(o.paidAt).toLocaleString('de-DE')}` : ''}
+                    </p>
+                    {o.quotedTotalEur != null ? (
+                      <p className="text-xs font-semibold text-on-surface">Angebot: {o.quotedTotalEur.toFixed(2)} €</p>
+                    ) : null}
+                  </div>
+                  {o.canPay ? (
+                    <button
+                      type="button"
+                      disabled={vignettePayBusy === o.id}
+                      onClick={() => {
+                        if (!token) return
+                        void (async () => {
+                          setVignettePayBusy(o.id)
+                          try {
+                            const { url } = await createVignetteStripeCheckoutSession(token, o.id)
+                            window.location.href = url
+                          } catch (e) {
+                            setMsg(e instanceof Error ? e.message : 'Checkout nicht möglich.')
+                          } finally {
+                            setVignettePayBusy(null)
+                          }
+                        })()
+                      }}
+                      className="shrink-0 rounded-xl bg-secondary px-4 py-2 text-xs font-black text-on-secondary disabled:opacity-40"
+                    >
+                      {vignettePayBusy === o.id ? '…' : 'Jetzt bezahlen (Stripe)'}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </main>

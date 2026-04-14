@@ -6,6 +6,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { DatabaseError } from 'pg'
 import { z } from 'zod'
 import { ensureAuthSchemaPatches, runMigrations } from './migrate.js'
+import { seedMapSimulationData } from './seedMapSimulation.js'
 import { pool } from './pool.js'
 import { registerGeocodeRoutes } from './geocoding.js'
 import { mapIconSchema } from './mapIcons.js'
@@ -17,6 +18,9 @@ import {
   type TollVehicleClass,
 } from './routeTollAdvice.js'
 import { answerWithRouteAssistant } from './routeAssistant.js'
+import { registerAdminAndCuratedRoutes } from './adminRoutes.js'
+import { registerVignetteServiceRoutes } from './vignetteServiceRoutes.js'
+import { registerRideShareRoutes } from './rideShareRoutes.js'
 import { registerSocialRoutes } from './socialRoutes.js'
 
 declare module '@fastify/jwt' {
@@ -202,6 +206,9 @@ async function buildServer() {
   await registerGeocodeRoutes(app)
 
   await registerSocialRoutes(app)
+  await registerRideShareRoutes(app)
+  await registerAdminAndCuratedRoutes(app)
+  await registerVignetteServiceRoutes(app)
 
   app.get('/api/health', async () => ({ ok: true }))
 
@@ -222,7 +229,7 @@ async function buildServer() {
       const r = await pool.query(
         `INSERT INTO users (email, password_hash, display_name)
          VALUES ($1, $2, $3)
-         RETURNING id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at`,
+         RETURNING id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at, role`,
         [email.toLowerCase(), passwordHash, displayName],
       )
       const user = r.rows[0]
@@ -247,7 +254,7 @@ async function buildServer() {
 
     const { email, password } = parsed.data
     const r = await pool.query(
-      `SELECT id, email, password_hash, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at
+      `SELECT id, email, password_hash, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at, role
        FROM users WHERE email = $1`,
       [email.toLowerCase()],
     )
@@ -273,7 +280,7 @@ async function buildServer() {
 
   app.get('/api/auth/me', { preHandler: authenticate }, async (request) => {
     const r = await pool.query(
-      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at, role FROM users WHERE id = $1`,
       [request.user.sub],
     )
     const user = r.rows[0]
@@ -381,7 +388,7 @@ async function buildServer() {
 
   app.get('/api/profile', { preHandler: authenticate }, async (request, reply) => {
     const u = await pool.query(
-      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at, role FROM users WHERE id = $1`,
       [request.user.sub],
     )
     if (!u.rows[0]) return reply.status(404).send({ error: 'Nicht gefunden' })
@@ -417,7 +424,7 @@ async function buildServer() {
       await pool.query(`UPDATE users SET toll_vehicle_class = $1 WHERE id = $2`, [tollVehicleClass, request.user.sub])
     }
     const u = await pool.query(
-      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at, role FROM users WHERE id = $1`,
       [request.user.sub],
     )
     return { user: mapUser(u.rows[0]) }
@@ -746,7 +753,7 @@ async function buildServer() {
   })
 
   const assistantAskBodySchema = z.object({
-    question: z.string().min(3).max(800),
+    question: z.string().min(3).max(1200),
     corridor: z.string().max(80).optional().default('berlin_turkey'),
     vehicleClass: z.enum(['car', 'motorcycle', 'heavy', 'other']).optional().default('car'),
     geometry: z
@@ -755,11 +762,81 @@ async function buildServer() {
         coordinates: z.array(z.tuple([z.number(), z.number()])).min(2).max(25_000),
       })
       .optional(),
+    /** Mitglieder-Kontext: letzte Textnachrichten + optionale KI-Memories dieser Gruppe. */
+    groupId: z.string().uuid().optional(),
+    /** Antwort in Gruppen-KI-Speicher legen (nur mit groupId + Anmeldung). */
+    saveMemory: z.boolean().optional().default(false),
   })
 
   app.post('/api/assistant/ask', async (request, reply) => {
     const parsed = assistantAskBodySchema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    let authedUserId: string | null = null
+    let groupChatExcerpt: string | null = null
+    let priorMemoryExcerpt: string | null = null
+
+    if (parsed.data.groupId) {
+      try {
+        await request.jwtVerify()
+      } catch {
+        return reply.status(401).send({ error: 'Anmeldung nötig für KI mit Gruppenkontext' })
+      }
+      authedUserId = request.user.sub
+      const mem = await pool.query(
+        `SELECT 1 FROM group_members WHERE group_id = $1::uuid AND user_id = $2::uuid`,
+        [parsed.data.groupId, authedUserId],
+      )
+      if (!mem.rowCount) {
+        return reply.status(403).send({ error: 'Keine Mitgliedschaft in dieser Gruppe' })
+      }
+
+      const maxChat = Math.min(
+        120,
+        Math.max(8, Number(process.env.AI_GROUP_CHAT_MAX_MESSAGES ?? 60) || 60),
+      )
+      const chatRes = await pool.query<{ author_name: string; body: string; created_at: Date }>(
+        `SELECT u.display_name AS author_name, gm.body, gm.created_at
+         FROM group_messages gm
+         JOIN users u ON u.id = gm.user_id
+         WHERE gm.group_id = $1::uuid
+           AND gm.message_type = 'text'
+           AND char_length(trim(gm.body)) > 0
+         ORDER BY gm.created_at DESC
+         LIMIT $2`,
+        [parsed.data.groupId, maxChat],
+      )
+      const chronological = [...chatRes.rows].reverse()
+      groupChatExcerpt = chronological
+        .map((r) => {
+          const t = new Date(r.created_at).toISOString().slice(0, 16)
+          const body = String(r.body).replace(/\s+/g, ' ').trim().slice(0, 500)
+          return `[${t}] ${r.author_name}: ${body}`
+        })
+        .join('\n')
+
+      try {
+        const memRes = await pool.query<{ question: string; answer: string; created_at: Date }>(
+          `SELECT question, answer, created_at
+           FROM assistant_memory
+           WHERE group_id = $1::uuid
+           ORDER BY created_at DESC
+           LIMIT 24`,
+          [parsed.data.groupId],
+        )
+        const rows = [...memRes.rows].reverse()
+        if (rows.length > 0) {
+          priorMemoryExcerpt = rows
+            .map((r) => {
+              const t = new Date(r.created_at).toISOString().slice(0, 16)
+              return `[${t}] Frage: ${String(r.question).slice(0, 400)}\nAntwort: ${String(r.answer).slice(0, 900)}`
+            })
+            .join('\n---\n')
+        }
+      } catch {
+        /* Tabelle assistant_memory kann auf sehr alten DBs fehlen */
+      }
+    }
 
     const ua =
       process.env.GEOCODING_USER_AGENT?.trim() ||
@@ -845,7 +922,26 @@ async function buildServer() {
           answer: String(r.answer),
           sourceUrl: r.source_url ? String(r.source_url) : null,
         })),
+        groupChatExcerpt: groupChatExcerpt ?? undefined,
+        priorMemoryExcerpt: priorMemoryExcerpt ?? undefined,
       })
+
+      if (parsed.data.saveMemory && parsed.data.groupId && authedUserId) {
+        try {
+          await pool.query(
+            `INSERT INTO assistant_memory (group_id, user_id, question, answer)
+             VALUES ($1::uuid, $2::uuid, $3, $4)`,
+            [
+              parsed.data.groupId,
+              authedUserId,
+              parsed.data.question.slice(0, 2000),
+              ai.answer.slice(0, 8000),
+            ],
+          )
+        } catch (e) {
+          request.log.warn({ err: e }, 'assistant_memory insert skipped')
+        }
+      }
 
       return {
         answer: ai.answer,
@@ -892,6 +988,7 @@ function mapUser(row: {
   stats_km: number
   stats_regions: number
   created_at: Date
+  role?: string | null
 }) {
   const tvc = row.toll_vehicle_class
   const tollVehicleClass: TollVehicleClass =
@@ -905,6 +1002,7 @@ function mapUser(row: {
     statsKm: row.stats_km,
     statsRegions: row.stats_regions,
     createdAt: row.created_at,
+    role: row.role === 'admin' ? ('admin' as const) : ('user' as const),
   }
 }
 
@@ -954,6 +1052,10 @@ async function main() {
 
   if (process.env.INIT_DB === 'true') {
     await runMigrations()
+  }
+
+  if (process.env.SEED_MAP_SIMULATION === 'true') {
+    await seedMapSimulationData()
   }
 
   const app = await buildServer()

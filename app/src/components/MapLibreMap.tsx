@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { MapPoiDto } from '../lib/api'
+import type { CuratedPlaceDto, MapPoiDto } from '../lib/api'
 import { normalizeMapIconId } from '../lib/mapIcons'
 
 /** OpenFreeMap Vector-Style (OSM-Daten, kein API-Key). Später: eigener Tileserver. */
@@ -51,12 +51,28 @@ type MapLibreMapProps = {
   onPickMapPoint?: (target: 'from' | 'to', pos: { lat: number; lng: number }) => void
   /** Klick auf einen POI-Marker (stoppt Kartenklick). */
   onPoiMarkerClick?: (poi: MapPoiDto) => void
+  /** Admin-redaktionelle Tipps (Unterkunft, Restaurant, Rasthof). */
+  curatedPlaces?: CuratedPlaceDto[]
+  onCuratedPlaceClick?: (place: CuratedPlaceDto) => void
   /** Klick auf einen Teilnehmer-Marker. */
   onParticipantMarkerClick?: (p: MapParticipantMarker) => void
   onMoveEnd?: (center: { lat: number; lng: number }) => void
   onMapReady?: (map: maplibregl.Map) => void
   /** Nutzer bewegt/zoomt die Karte manuell → Navigation kann pausieren. */
   onUserDirectMapInteraction?: () => void
+}
+
+function curatedPinStyle(category: string): { bg: string; icon: string } {
+  switch (category) {
+    case 'accommodation':
+      return { bg: '#6a1b9a', icon: 'hotel' }
+    case 'restaurant':
+      return { bg: '#e65100', icon: 'restaurant' }
+    case 'rest_area':
+      return { bg: '#2e7d32', icon: 'local_gas_station' }
+    default:
+      return { bg: '#546e7a', icon: 'place' }
+  }
 }
 
 function categoryColor(cat: string): string {
@@ -85,6 +101,7 @@ function categoryColor(cat: string): string {
 export function MapLibreMap({
   className,
   pois = [],
+  curatedPlaces = [],
   participants = [],
   selfUserId,
   showNavigationControls = true,
@@ -94,6 +111,7 @@ export function MapLibreMap({
   mapPickTarget = null,
   onPickMapPoint,
   onPoiMarkerClick,
+  onCuratedPlaceClick,
   onParticipantMarkerClick,
   onMoveEnd,
   onMapReady,
@@ -102,6 +120,7 @@ export function MapLibreMap({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const poiMarkersRef = useRef<maplibregl.Marker[]>([])
+  const curatedMarkersRef = useRef<maplibregl.Marker[]>([])
   const participantMarkersRef = useRef<maplibregl.Marker[]>([])
   const destMarkerRef = useRef<maplibregl.Marker | null>(null)
   const startMarkerRef = useRef<maplibregl.Marker | null>(null)
@@ -109,6 +128,7 @@ export function MapLibreMap({
   const onPickMapPointRef = useRef(onPickMapPoint)
   const mapPickTargetRef = useRef(mapPickTarget)
   const onPoiMarkerClickRef = useRef(onPoiMarkerClick)
+  const onCuratedPlaceClickRef = useRef(onCuratedPlaceClick)
   const onParticipantMarkerClickRef = useRef(onParticipantMarkerClick)
   const routeGeometryRef = useRef(routeGeometry)
   const onUserDirectMapInteractionRef = useRef(onUserDirectMapInteraction)
@@ -117,6 +137,7 @@ export function MapLibreMap({
   onPickMapPointRef.current = onPickMapPoint
   mapPickTargetRef.current = mapPickTarget
   onPoiMarkerClickRef.current = onPoiMarkerClick
+  onCuratedPlaceClickRef.current = onCuratedPlaceClick
   onParticipantMarkerClickRef.current = onParticipantMarkerClick
   routeGeometryRef.current = routeGeometry
 
@@ -196,6 +217,36 @@ export function MapLibreMap({
       poiMarkersRef.current.push(marker)
     }
   }, [pois])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    for (const m of curatedMarkersRef.current) m.remove()
+    curatedMarkersRef.current = []
+
+    for (const p of curatedPlaces) {
+      const { bg, icon } = curatedPinStyle(p.category)
+      const wrap = document.createElement('div')
+      wrap.className =
+        'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-[3px] border-white shadow-lg ring-1 ring-black/15'
+      wrap.style.backgroundColor = bg
+      wrap.title = p.name
+      const sym = document.createElement('span')
+      sym.className = 'material-symbols-outlined text-[22px] leading-none text-white'
+      sym.style.fontVariationSettings = "'FILL' 1"
+      sym.textContent = icon
+      wrap.appendChild(sym)
+      wrap.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        onCuratedPlaceClickRef.current?.(p)
+      })
+      const marker = new maplibregl.Marker({ element: wrap, anchor: 'bottom' })
+        .setLngLat([p.lng, p.lat])
+        .addTo(map)
+      curatedMarkersRef.current.push(marker)
+    }
+  }, [curatedPlaces])
 
   useEffect(() => {
     const map = mapRef.current
