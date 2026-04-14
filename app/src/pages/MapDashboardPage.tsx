@@ -156,6 +156,8 @@ export function MapDashboardPage() {
   const [routeBriefing, setRouteBriefing] = useState<RouteBriefingDto | null>(null)
   const [routeBriefingLoading, setRouteBriefingLoading] = useState(false)
   const [routeBriefingErr, setRouteBriefingErr] = useState<string | null>(null)
+  /** Kompakte HUD-Leiste statt großem Navigationspanel (Display frei halten). */
+  const [navHudExpanded, setNavHudExpanded] = useState(false)
   const [assistantQuestion, setAssistantQuestion] = useState('')
   const [assistantAnswer, setAssistantAnswer] = useState<AssistantAskDto | null>(null)
   const [assistantLoading, setAssistantLoading] = useState(false)
@@ -1050,6 +1052,7 @@ export function MapDashboardPage() {
       setRouteBriefingLoading(false)
       setAssistantAnswer(null)
       setAssistantErr(null)
+      setNavHudExpanded(false)
       return
     }
     const ac = new AbortController()
@@ -1147,115 +1150,153 @@ export function MapDashboardPage() {
                 </button>
               </div>
             ) : null}
-            <div className="flex items-start gap-2">
-              <span className="material-symbols-outlined mt-0.5 shrink-0 text-3xl text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                navigation
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">Navigation</p>
-                {navAlongState ? (
-                  <div
-                    className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high"
-                    title="Streckenfortschritt"
-                  >
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
-                      style={{ width: `${Math.round(navAlongState.maneuver.routeProgress * 100)}%` }}
-                    />
-                  </div>
-                ) : null}
-                {myPos ? (
-                  <>
-                    <p className="mt-2 line-clamp-3 text-base font-bold leading-snug text-on-surface">
-                      {navAlongState?.primaryStep?.text ?? 'Folge der blauen Linie.'}
-                    </p>
-                    {navAlongState && navAlongState.maneuver.metersUntilStepEnd > 12 ? (
-                      <p className="mt-1 text-lg font-black tabular-nums text-primary">
-                        in {formatRouteDist(navAlongState.maneuver.metersUntilStepEnd)}
-                      </p>
-                    ) : null}
-                    {navAlongState?.maneuver.secondaryText ? (
-                      <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
-                        Danach: {navAlongState.maneuver.secondaryText}
-                      </p>
-                    ) : null}
-                    {navAlongState ? (
-                      <p className="mt-1 text-xs text-on-surface-variant">
-                        Ziel noch ca. {formatRouteDist(navAlongState.remainingM)}
-                        {routeMeta ? (
-                          <span> · {formatRouteDuration(Math.max(60, (navAlongState.remainingM / Math.max(navAlongState.totalM, 1)) * routeMeta.durationS))}</span>
-                        ) : null}
-                        {navAlongState.distToRouteM > 35 && navAlongState.distToRouteM < NAV_OFF_ROUTE_WARN_M ? (
-                          <span className="text-on-surface-variant"> · {formatRouteDist(navAlongState.distToRouteM)} von der Linie</span>
-                        ) : null}
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-sm font-medium text-on-surface-variant">
-                    Warte auf GPS… (Standortfreigabe) oder nutze die Routen-Optionen unten.
+            {!navHudExpanded ? (
+              <button
+                type="button"
+                onClick={() => setNavHudExpanded(true)}
+                className="flex w-full items-center gap-2 rounded-xl border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-left"
+                aria-label="Navigation erweitern"
+              >
+                <span
+                  className="material-symbols-outlined shrink-0 text-2xl text-primary"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  navigation
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-on-surface">
+                    {navAlongState?.primaryStep?.text ?? 'Navigation aktiv'}
                   </p>
-                )}
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 border-t border-outline-variant/20 pt-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
-                <input
-                  type="checkbox"
-                  checked={navFollowActive}
-                  onChange={(e) => {
-                    const on = e.target.checked
-                    setNavFollowActive(on)
-                    if (!on) {
-                      mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 750, essential: true })
-                    }
-                  }}
-                  className="h-4 w-4 rounded border-outline-variant accent-primary"
-                />
-                Auto-Führung (GPS + alle {NAV_CAMERA_HEARTBEAT_MS / 1000}s)
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
-                <input
-                  type="checkbox"
-                  checked={navTtsEnabled}
-                  onChange={(e) => setNavTtsEnabledPersist(e.target.checked)}
-                  className="h-4 w-4 rounded border-outline-variant accent-primary"
-                />
-                Sprachansagen
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
-                <input
-                  type="checkbox"
-                  checked={navWakeLockEnabled}
-                  onChange={(e) => setNavWakeLockEnabledPersist(e.target.checked)}
-                  className="h-4 w-4 rounded border-outline-variant accent-primary"
-                />
-                Bildschirm wachhalten
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
-                <input
-                  type="checkbox"
-                  checked={navAutoRerouteEnabled}
-                  onChange={(e) => setNavAutoRerouteEnabledPersist(e.target.checked)}
-                  className="h-4 w-4 rounded border-outline-variant accent-primary"
-                />
-                Neu planen bei Abweichung
-              </label>
-              <button
-                type="button"
-                onClick={() => fitWholeRouteOnMap()}
-                className="rounded-full border border-outline-variant/60 px-3 py-1 text-xs font-bold text-on-surface"
-              >
-                Gesamte Route
+                  <p className="truncate text-[11px] text-on-surface-variant">
+                    {navAlongState
+                      ? `Noch ${formatRouteDist(navAlongState.remainingM)}${routeMeta ? ` · ${formatRouteDuration(Math.max(60, (navAlongState.remainingM / Math.max(navAlongState.totalM, 1)) * routeMeta.durationS))}` : ''}`
+                      : 'Tippen, um Navigation zu öffnen'}
+                  </p>
+                </div>
+                <span className="material-symbols-outlined shrink-0 text-on-surface-variant">expand_less</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setNavPanelOpen(true)}
-                className="rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary"
-              >
-                Routen-Optionen
-              </button>
-            </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined mt-0.5 shrink-0 text-3xl text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    navigation
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">Navigation</p>
+                      <button
+                        type="button"
+                        onClick={() => setNavHudExpanded(false)}
+                        className="rounded-lg border border-outline-variant/40 px-2 py-0.5 text-[10px] font-bold text-on-surface-variant"
+                      >
+                        Einklappen
+                      </button>
+                    </div>
+                    {navAlongState ? (
+                      <div
+                        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high"
+                        title="Streckenfortschritt"
+                      >
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                          style={{ width: `${Math.round(navAlongState.maneuver.routeProgress * 100)}%` }}
+                        />
+                      </div>
+                    ) : null}
+                    {myPos ? (
+                      <>
+                        <p className="mt-2 line-clamp-3 text-base font-bold leading-snug text-on-surface">
+                          {navAlongState?.primaryStep?.text ?? 'Folge der blauen Linie.'}
+                        </p>
+                        {navAlongState && navAlongState.maneuver.metersUntilStepEnd > 12 ? (
+                          <p className="mt-1 text-lg font-black tabular-nums text-primary">
+                            in {formatRouteDist(navAlongState.maneuver.metersUntilStepEnd)}
+                          </p>
+                        ) : null}
+                        {navAlongState?.maneuver.secondaryText ? (
+                          <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
+                            Danach: {navAlongState.maneuver.secondaryText}
+                          </p>
+                        ) : null}
+                        {navAlongState ? (
+                          <p className="mt-1 text-xs text-on-surface-variant">
+                            Ziel noch ca. {formatRouteDist(navAlongState.remainingM)}
+                            {routeMeta ? (
+                              <span> · {formatRouteDuration(Math.max(60, (navAlongState.remainingM / Math.max(navAlongState.totalM, 1)) * routeMeta.durationS))}</span>
+                            ) : null}
+                            {navAlongState.distToRouteM > 35 && navAlongState.distToRouteM < NAV_OFF_ROUTE_WARN_M ? (
+                              <span className="text-on-surface-variant"> · {formatRouteDist(navAlongState.distToRouteM)} von der Linie</span>
+                            ) : null}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="mt-0.5 text-sm font-medium text-on-surface-variant">
+                        Warte auf GPS… (Standortfreigabe) oder nutze die Routen-Optionen unten.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-outline-variant/20 pt-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+                    <input
+                      type="checkbox"
+                      checked={navFollowActive}
+                      onChange={(e) => {
+                        const on = e.target.checked
+                        setNavFollowActive(on)
+                        if (!on) {
+                          mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 750, essential: true })
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-outline-variant accent-primary"
+                    />
+                    Auto-Führung (GPS + alle {NAV_CAMERA_HEARTBEAT_MS / 1000}s)
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+                    <input
+                      type="checkbox"
+                      checked={navTtsEnabled}
+                      onChange={(e) => setNavTtsEnabledPersist(e.target.checked)}
+                      className="h-4 w-4 rounded border-outline-variant accent-primary"
+                    />
+                    Sprachansagen
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+                    <input
+                      type="checkbox"
+                      checked={navWakeLockEnabled}
+                      onChange={(e) => setNavWakeLockEnabledPersist(e.target.checked)}
+                      className="h-4 w-4 rounded border-outline-variant accent-primary"
+                    />
+                    Bildschirm wachhalten
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-on-surface">
+                    <input
+                      type="checkbox"
+                      checked={navAutoRerouteEnabled}
+                      onChange={(e) => setNavAutoRerouteEnabledPersist(e.target.checked)}
+                      className="h-4 w-4 rounded border-outline-variant accent-primary"
+                    />
+                    Neu planen bei Abweichung
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => fitWholeRouteOnMap()}
+                    className="rounded-full border border-outline-variant/60 px-3 py-1 text-xs font-bold text-on-surface"
+                  >
+                    Gesamte Route
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNavPanelOpen(true)}
+                    className="rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary"
+                  >
+                    Routen-Optionen
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
