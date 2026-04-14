@@ -675,7 +675,7 @@ export function GroupChatPage() {
                 onChange={(e) => setPttNearbyOnly(e.target.checked)}
                 className="h-4 w-4 rounded border-outline-variant accent-primary"
               />
-              Walkie nur an Gruppenmitglieder in der Nähe (~25 km, geteilte Kartenposition nötig)
+              Walkie nur an Gruppenmitglieder in der Nähe (~25 km, geteilte Kartenposition nötig)
             </label>
             <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-on-surface-variant">
               <input
@@ -688,7 +688,7 @@ export function GroupChatPage() {
             </label>
           </div>
           <p className="mx-auto mb-2 max-w-2xl text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">
-            Live-Funk: Taste halten und sprechen; lange halten (~0,7 s) sperrt offenes Mikrofon bis Beenden oder erneuter
+            Live-Funk: Taste halten und sprechen; lange halten (~0,7 s) sperrt offenes Mikrofon bis Beenden oder erneuter
             Funk-Tipp. Sprachnachricht: Aufnahme antippen, erneut zum Senden.
           </p>
           <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2">
@@ -733,8 +733,9 @@ export function GroupChatPage() {
               <span
                 className="material-symbols-outlined text-2xl"
                 style={{ fontVariationSettings: pttLiveUi || pttLatchedUi ? "'FILL' 1" : "'FILL' 0" }}
+                aria-hidden
               >
-                walkie_talkie
+                {pttLiveUi || pttLatchedUi ? 'mic' : 'radio'}
               </span>
             </button>
             {pttLiveUi || pttLatchedUi ? (

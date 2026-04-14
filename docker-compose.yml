@@ -66,11 +66,17 @@ services:
       # API-Image ist production; ohne dieses Flag nur exakte CORS_ORIGIN-URLs (Vite nutzt oft 5174+)
       CORS_RELAX_LOCALHOST: 'true'
       INIT_DB: 'true'
+      # Nominatim/OSM: gültige Kontaktzeile (sonst oft HTTP 403 bei Ortssuche)
+      GEOCODING_USER_AGENT: ${GEOCODING_USER_AGENT:-YolArkadasim/1.0 (dev@yol.local)}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       # Optional: Stripe (Vignetten-Checkout) – siehe api/.env.example
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      # Optional: PayPal (parallel zu Stripe) – PAYPAL_MODE=sandbox|live
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_MODE: ${PAYPAL_MODE:-sandbox}
       PUBLIC_WEB_APP_URL: ${PUBLIC_WEB_APP_URL:-http://localhost:5173}
       # Optional: E-Mail (SMTP) + Admin-Benachrichtigung bei neuer Vignetten-Anfrage
       SMTP_HOST: ${SMTP_HOST:-}

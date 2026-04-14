@@ -1,4 +1,4 @@
-import { reverseNominatimCountryCode } from './geocoding.js'
+import { reverseBigDataCloudCountryCode, reverseNominatimCountryCode } from './geocoding.js'
 
 export type TollVehicleClass = 'car' | 'motorcycle' | 'heavy' | 'other'
 
@@ -281,15 +281,118 @@ function pointAtAlongM(coords: [number, number][], alongM: number): { lng: numbe
   return { lng: last[0], lat: last[1] }
 }
 
+/** Näherungsweise Streckenkilometer eines Punktes auf der Polylinie (für Sortierung / Lücken). */
+function closestAlongMOnRoute(coords: [number, number][], lng: number, lat: number): number {
+  if (coords.length < 2) return 0
+  let cum = 0
+  let bestAlong = 0
+  let bestDist = Infinity
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lng0, lat0] = coords[i]!
+    const [lng1, lat1] = coords[i + 1]!
+    const segM = haversineM(lat0, lng0, lat1, lng1)
+    const dx = lng1 - lng0
+    const dy = lat1 - lat0
+    const ll = dx * dx + dy * dy
+    const t = ll < 1e-22 ? 0 : Math.max(0, Math.min(1, ((lng - lng0) * dx + (lat - lat0) * dy) / ll))
+    const clat = lat0 + t * dy
+    const clng = lng0 + t * dx
+    const d = haversineM(lat, lng, clat, clng)
+    if (d < bestDist) {
+      bestDist = d
+      bestAlong = cum + t * segM
+    }
+    cum += segM
+  }
+  return bestAlong
+}
+
+/**
+ * Bei großen Abständen zwischen Stützpunkten zusätzliche Punkte auf der Linie (z. B. schmale
+ * Durchfahrtsländer wie SK zwischen CZ und HU), ohne die Gesamtzahl der Geocodes explodieren zu lassen.
+ * Zusatzpunkte zuerst in den **größten** Lücken (beste Chance, ein dazwischenliegendes Land zu treffen).
+ */
+function augmentSamplesWithMidpoints(
+  coords: [number, number][],
+  samples: { lng: number; lat: number }[],
+  minGapM: number,
+  maxMidpoints: number,
+): { lng: number; lat: number }[] {
+  if (samples.length < 2 || maxMidpoints <= 0) return samples
+  const tagged = samples.map((p) => ({
+    lng: p.lng,
+    lat: p.lat,
+    along: closestAlongMOnRoute(coords, p.lng, p.lat),
+  }))
+  tagged.sort((a, b) => a.along - b.along)
+  const dedup: typeof tagged = []
+  for (const t of tagged) {
+    const prev = dedup[dedup.length - 1]
+    if (prev && Math.abs(t.along - prev.along) < 1_500) continue
+    dedup.push(t)
+  }
+  const gapCandidates: { lo: number; hi: number; gap: number }[] = []
+  for (let i = 1; i < dedup.length; i++) {
+    const prev = dedup[i - 1]!
+    const cur = dedup[i]!
+    const gap = cur.along - prev.along
+    if (gap > minGapM) gapCandidates.push({ lo: prev.along, hi: cur.along, gap })
+  }
+  gapCandidates.sort((a, b) => b.gap - a.gap)
+  const extra: { lng: number; lat: number; along: number }[] = []
+  for (let k = 0; k < Math.min(maxMidpoints, gapCandidates.length); k++) {
+    const g = gapCandidates[k]!
+    const midAlong = (g.lo + g.hi) / 2
+    const p = pointAtAlongM(coords, midAlong)
+    extra.push({ ...p, along: midAlong })
+  }
+  const merged = [...dedup, ...extra]
+  merged.sort((a, b) => a.along - b.along)
+  const out: { lng: number; lat: number }[] = []
+  for (const m of merged) {
+    const prev = out[out.length - 1]
+    if (prev) {
+      const pa = closestAlongMOnRoute(coords, prev.lng, prev.lat)
+      const ca = m.along
+      if (Math.abs(ca - pa) < 1_200) continue
+    }
+    out.push({ lng: m.lng, lat: m.lat })
+  }
+  return out
+}
+
+/** OSRM kann Zehntausende Punkte liefern; API-Schema und Nominatim-Logik begrenzen wir hier. */
+export function downsampleLineStringCoordinates(coords: [number, number][], maxPoints: number): [number, number][] {
+  if (coords.length <= maxPoints) return coords
+  const last = coords.length - 1
+  const out: [number, number][] = []
+  for (let i = 0; i < maxPoints; i++) {
+    const idx = Math.round((i * last) / (maxPoints - 1))
+    const p = coords[idx]!
+    out.push([p[0], p[1]])
+  }
+  const dedup: [number, number][] = []
+  for (const p of out) {
+    const q = dedup[dedup.length - 1]
+    if (!q || q[0] !== p[0] || q[1] !== p[1]) dedup.push(p)
+  }
+  return dedup.length >= 2 ? dedup : [coords[0]!, coords[last]!]
+}
+
 /** Stützpunkte entlang der Linie (max. `maxPoints`, inkl. Start/Ziel wenn möglich). */
-export function sampleRoutePoints(coords: [number, number][], maxPoints: number): { lng: number; lat: number }[] {
+export function sampleRoutePoints(
+  coords: [number, number][],
+  maxPoints: number,
+  /** Etwalicher Abstand entlang der Route – kleiner = dichter (z. B. schmale Länder nicht verpassen). */
+  targetSpacingM = 22_000,
+): { lng: number; lat: number }[] {
   if (coords.length === 0) return []
   if (coords.length === 1) {
     const [lng, lat] = coords[0]
     return [{ lng, lat }]
   }
   const total = totalLengthM(coords)
-  const n = Math.min(maxPoints, Math.max(2, Math.ceil(total / 45_000) + 1))
+  const n = Math.min(maxPoints, Math.max(2, Math.ceil(total / targetSpacingM) + 1))
   const out: { lng: number; lat: number }[] = []
   for (let i = 0; i < n; i++) {
     const along = n === 1 ? 0 : (total * i) / (n - 1)
@@ -305,22 +408,41 @@ function sleep(ms: number) {
 export async function collectCountriesAlongRoute(
   coords: [number, number][],
   userAgent: string,
-  opts?: { maxReverseCalls?: number; delayMs?: number },
+  opts?: {
+    maxReverseCalls?: number
+    delayMs?: number
+    /** Abstand für Zusatzstützpunkte zwischen großen Lücken (Meter). */
+    minGapMidpointM?: number
+    /** Max. zusätzliche Mittelpunkte (Performance / Nominatim). */
+    maxGapMidpoints?: number
+    sampleSpacingM?: number
+  },
 ): Promise<RouteCountryHit[]> {
-  const maxCalls = opts?.maxReverseCalls ?? 10
+  const maxCalls = opts?.maxReverseCalls ?? 14
   const delayMs = opts?.delayMs ?? 1050
-  const samples = sampleRoutePoints(coords, maxCalls)
+  const minGapMid = opts?.minGapMidpointM ?? 68_000
+  const maxGapMid = opts?.maxGapMidpoints ?? 12
+  const spacing = opts?.sampleSpacingM ?? 22_000
+  let samples = sampleRoutePoints(coords, maxCalls, spacing)
+  samples = augmentSamplesWithMidpoints(coords, samples, minGapMid, maxGapMid)
   const seen = new Set<string>()
   const ordered: RouteCountryHit[] = []
 
   for (let i = 0; i < samples.length; i++) {
     const p = samples[i]!
-    const code = await reverseNominatimCountryCode(p.lat, p.lng, userAgent)
+    let code = await reverseBigDataCloudCountryCode(p.lat, p.lng)
+    let calledNominatim = false
+    if (!code) {
+      calledNominatim = true
+      code = await reverseNominatimCountryCode(p.lat, p.lng, userAgent)
+    }
     if (code && !seen.has(code)) {
       seen.add(code)
       ordered.push({ countryCode: code, lat: p.lat, lng: p.lng })
     }
-    if (i < samples.length - 1) await sleep(delayMs)
+    if (i < samples.length - 1) {
+      await sleep(calledNominatim ? delayMs : 160)
+    }
   }
   return ordered
 }

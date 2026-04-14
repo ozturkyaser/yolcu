@@ -62,12 +62,21 @@ export function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+      <Link
+        to="/admin/payments"
+        className="block rounded-2xl border border-primary/30 bg-primary-container/25 p-4 transition hover:border-primary/50"
+      >
+        <p className="text-xs font-bold uppercase tracking-wide text-primary">Zahlungen</p>
+        <p className="mt-1 text-sm font-semibold text-on-surface">Stripe, PayPal, Redirect-URLs & E-Mail-Status</p>
+        <p className="mt-1 text-xs text-on-surface-variant">Zur Übersicht der Server-Konfiguration →</p>
+      </Link>
+
       <section className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-4">
         <h2 className="text-sm font-black text-on-surface">Hinweis</h2>
         <p className="mt-2 text-xs leading-relaxed text-on-surface-variant">
-          Standard-Admin nach lokalem Seed: Nutzer <strong>test@yol.local</strong> (siehe README). In Produktion
-          Rollen nur vertrauenswürdigen Personen zuweisen. Es gibt noch kein separates Admin-Login – Zugriff über
-          normales Konto mit Rolle „admin“.
+          Standard-Admin nach lokalem Seed: Nutzer <strong>test@yol.local</strong> (siehe README). Weitere Admins
+          vergeben unter <strong>Nutzer</strong> („Zu Admin hochstufen“). Es gibt kein separates Admin-Login – Zugriff
+          über normales Konto mit Rolle „admin“.
         </p>
       </section>
     </div>

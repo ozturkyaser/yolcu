@@ -18,7 +18,7 @@ export type MapParticipantMarker = {
   mapIcon?: string
   lat: number
   lng: number
-  /** Gleiche Gruppe + in Funk-Nähe (z. B. unter 15 km) – nur wenn Filter „Gruppe“ aktiv. */
+  /** Gleiche Gruppe + in Funk-Nähe (z. B. unter 15 km) – nur wenn Filter „Gruppe“ aktiv. */
   inGroupRange?: boolean
 }
 

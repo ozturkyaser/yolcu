@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import { isMailConfigured, vignetteAdminNotifyEmail } from './mail.js'
+import { getPayPalConfig } from './paypalClient.js'
 import { pool } from './pool.js'
+import { getStripe, publicWebAppBaseUrl } from './stripeClient.js'
 
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -40,6 +43,20 @@ const adminUserPatchSchema = z.object({
   role: z.enum(['user', 'admin']).optional(),
   displayName: z.string().min(1).max(80).optional(),
 })
+
+function stripeKeyKind(): 'test' | 'live' | 'custom' | null {
+  const key = process.env.STRIPE_SECRET_KEY?.trim()
+  if (!key) return null
+  if (key.startsWith('sk_test_')) return 'test'
+  if (key.startsWith('sk_live_')) return 'live'
+  return 'custom'
+}
+
+function paypalClientIdPreview(id: string): string {
+  const t = id.trim()
+  if (t.length <= 14) return `${t.slice(0, 6)}…`
+  return `${t.slice(0, 10)}…${t.slice(-4)}`
+}
 
 function mapCuratedRow(row: Record<string, unknown>) {
   return {
@@ -107,6 +124,50 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
     }
   })
 
+  /** Keine Geheimnisse – nur Status & URLs für Betrieb/Dokumentation. */
+  app.get('/api/admin/payment-settings', { preHandler: [authenticate, requireAdmin] }, async () => {
+    const base = publicWebAppBaseUrl()
+    const pp = getPayPalConfig()
+    const live = process.env.PAYPAL_MODE === 'live'
+    const adminMail = vignetteAdminNotifyEmail()
+    const adminMailHint =
+      adminMail && adminMail.includes('@')
+        ? `${adminMail.slice(0, 1)}…${adminMail.slice(adminMail.indexOf('@'))}`
+        : adminMail
+          ? 'gesetzt'
+          : null
+    return {
+      publicWebAppUrl: base,
+      envVarsDoc: {
+        stripe: ['STRIPE_SECRET_KEY'],
+        paypal: ['PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET', 'PAYPAL_MODE (sandbox|live)'],
+        appUrl: ['PUBLIC_WEB_APP_URL'],
+        mail: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM', 'VIGNETTE_ADMIN_EMAIL'],
+      },
+      stripe: {
+        configured: Boolean(getStripe()),
+        keyKind: stripeKeyKind(),
+      },
+      paypal: {
+        configured: Boolean(pp),
+        mode: pp ? (live ? ('live' as const) : ('sandbox' as const)) : null,
+        clientIdPreview: pp ? paypalClientIdPreview(pp.clientId) : null,
+        apiBase: pp?.apiBase ?? null,
+      },
+      mail: {
+        smtpConfigured: isMailConfigured(),
+        vignetteAdminEmailSet: Boolean(adminMail),
+        vignetteAdminEmailHint: adminMailHint,
+      },
+      vignetteCheckoutUrls: {
+        stripeSuccess: `${base}/profile?vignetteCheckout=success&session_id={CHECKOUT_SESSION_ID}`,
+        stripeCancel: `${base}/profile?vignetteCheckout=cancel`,
+        paypalReturn: `${base}/profile?vignetteCheckout=paypal_success`,
+        paypalCancel: `${base}/profile?vignetteCheckout=paypal_cancel`,
+      },
+    }
+  })
+
   app.get('/api/admin/users', { preHandler: [authenticate, requireAdmin] }, async (request, reply) => {
     const q = z
       .object({
@@ -152,6 +213,18 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
     const { role, displayName } = parsed.data
     if (role == null && displayName == null) {
       return reply.status(400).send({ error: 'Keine Änderung' })
+    }
+
+    if (role === 'user') {
+      const cur = await pool.query<{ role: string }>(`SELECT role FROM users WHERE id = $1`, [id])
+      if (cur.rows[0]?.role === 'admin') {
+        const cnt = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM users WHERE role = 'admin'`)
+        if ((cnt.rows[0]?.n ?? 0) < 2) {
+          return reply
+            .status(400)
+            .send({ error: 'Der letzte verbleibende Admin kann nicht zurückgestuft werden.' })
+        }
+      }
     }
 
     if (displayName != null) {

@@ -24,6 +24,10 @@ cd "$ROOT"
 MODE="${1:-dev}"
 if [[ "$MODE" == "prod" ]]; then
   FILE="docker-compose.prod.yml"
+  if [[ -z "${VITE_APP_BUILD_NUMBER:-}" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree &>/dev/null; then
+    VITE_APP_BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD)"
+    export VITE_APP_BUILD_NUMBER
+  fi
 else
   FILE="${COMPOSE_FILE:-docker-compose.yml}"
 fi

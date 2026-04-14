@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { sendMailSafe, vignetteAdminNotifyEmail } from './mail.js'
+import { paypalCaptureAndVerify, paypalCreateOrderForVignette, getPayPalConfig } from './paypalClient.js'
 import { pool } from './pool.js'
 import { getStripe, publicWebAppBaseUrl } from './stripeClient.js'
 
@@ -157,6 +158,37 @@ export async function registerVignetteServiceRoutes(app: FastifyInstance) {
         text,
       }).catch((e) => console.error('[mail] admin vignette notify', e))
     }
+    const uMail = await pool.query<{ email: string; display_name: string }>(
+      `SELECT email, display_name FROM users WHERE id = $1`,
+      [request.user.sub],
+    )
+    const cust = uMail.rows[0]
+    if (cust?.email) {
+      const countriesLine = Array.isArray(d.countries) ? d.countries.map((c) => c.name).join(' → ') : ''
+      const base = publicWebAppBaseUrl()
+      const custText = [
+        `Hallo ${cust.display_name || ''},`,
+        ``,
+        `wir haben deine Vignetten-/Maut-Anfrage erhalten (Nr. ${row.id}).`,
+        ``,
+        `Route: ${d.routeLabel.trim() || '—'}`,
+        `Länder: ${countriesLine}`,
+        d.customerNote.trim() ? `Dein Hinweis: ${d.customerNote.trim()}` : '',
+        ``,
+        `Wir melden uns mit einem Angebot. Danach kannst du unter „Profil → Vignetten & Maut“ bezahlen (Stripe/PayPal, sofern konfiguriert).`,
+        `${base}/profile`,
+        ``,
+        `Viele Grüße`,
+        `Dein Yol-Team`,
+      ]
+        .filter(Boolean)
+        .join('\n')
+      void sendMailSafe({
+        to: cust.email,
+        subject: `[Yol] Vignetten-Anfrage eingegangen`,
+        text: custText,
+      }).catch((e) => console.error('[mail] customer vignette request confirm', e))
+    }
     return {
       request: {
         id: row.id,
@@ -180,11 +212,15 @@ export async function registerVignetteServiceRoutes(app: FastifyInstance) {
        LIMIT 50`,
       [request.user.sub],
     )
+    const stripeOn = Boolean(getStripe())
+    const paypalOn = Boolean(getPayPalConfig())
     return {
       requests: r.rows.map((row) => {
         const quoted = row.quoted_total_eur != null ? Number(row.quoted_total_eur) : null
-        const canPay =
-          row.status === 'quoted' && quoted != null && Number.isFinite(quoted) && quoted > 0 && Boolean(getStripe())
+        const payable =
+          row.status === 'quoted' && quoted != null && Number.isFinite(quoted) && quoted > 0
+        const canPayStripe = payable && stripeOn
+        const canPayPaypal = payable && paypalOn
         return {
           id: row.id,
           status: row.status,
@@ -192,7 +228,8 @@ export async function registerVignetteServiceRoutes(app: FastifyInstance) {
           quotedTotalEur: quoted,
           createdAt: row.created_at,
           paidAt: row.paid_at,
-          canPay,
+          canPayStripe,
+          canPayPaypal,
         }
       }),
     }
@@ -290,6 +327,102 @@ export async function registerVignetteServiceRoutes(app: FastifyInstance) {
       [orderId.data, session.id],
     )
     return { url: session.url }
+  })
+
+  app.post('/api/vignette-order-requests/:orderId/paypal-checkout', { preHandler: authenticate }, async (request, reply) => {
+    const orderId = z.string().uuid().safeParse((request.params as { orderId: string }).orderId)
+    if (!orderId.success) return reply.status(400).send({ error: 'Ungültige Bestell-ID' })
+    if (!getPayPalConfig()) {
+      return reply.status(503).send({ error: 'PayPal nicht konfiguriert (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET).' })
+    }
+    const ord = await pool.query<{
+      user_id: string
+      status: string
+      quoted_total_eur: string | null
+      route_label: string
+    }>(
+      `SELECT user_id, status, quoted_total_eur::text, route_label
+       FROM vignette_order_requests WHERE id = $1::uuid`,
+      [orderId.data],
+    )
+    if (!ord.rowCount) return reply.status(404).send({ error: 'Nicht gefunden' })
+    if (ord.rows[0].user_id !== request.user.sub) return reply.status(403).send({ error: 'Kein Zugriff' })
+    if (ord.rows[0].status !== 'quoted') {
+      return reply.status(400).send({ error: 'Nur Angebote im Status „quoted“ sind zahlbar.' })
+    }
+    const amount = ord.rows[0].quoted_total_eur != null ? Number(ord.rows[0].quoted_total_eur) : NaN
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return reply.status(400).send({ error: 'Kein gültiger Angebotspreis hinterlegt.' })
+    }
+    const base = publicWebAppBaseUrl()
+    const label = (ord.rows[0].route_label || 'Vignetten-Service').slice(0, 120)
+    const created = await paypalCreateOrderForVignette({
+      amountEur: amount,
+      vignetteOrderId: orderId.data,
+      description: `Vignetten-Service: ${label}`,
+      returnUrl: `${base}/profile?vignetteCheckout=paypal_success`,
+      cancelUrl: `${base}/profile?vignetteCheckout=paypal_cancel`,
+    })
+    if (!created) {
+      return reply.status(502).send({ error: 'PayPal-Checkout konnte nicht erstellt werden.' })
+    }
+    await pool.query(
+      `UPDATE vignette_order_requests SET paypal_order_id = $2, updated_at = now() WHERE id = $1::uuid`,
+      [orderId.data, created.paypalOrderId],
+    )
+    return { url: created.approveUrl }
+  })
+
+  const confirmPaypalSchema = z.object({
+    paypalOrderId: z.string().min(5).max(200),
+  })
+
+  app.post('/api/vignette-order-requests/confirm-paypal', { preHandler: authenticate }, async (request, reply) => {
+    const parsed = confirmPaypalSchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+    const paypalOrderId = parsed.data.paypalOrderId
+    const ord = await pool.query<{
+      id: string
+      user_id: string
+      status: string
+      quoted_total_eur: string | null
+      paypal_order_id: string | null
+    }>(
+      `SELECT id, user_id, status, quoted_total_eur::text, paypal_order_id
+       FROM vignette_order_requests
+       WHERE user_id = $1 AND paypal_order_id = $2`,
+      [request.user.sub, paypalOrderId],
+    )
+    if (!ord.rowCount) return reply.status(404).send({ error: 'Bestellung nicht gefunden' })
+    const row = ord.rows[0]!
+    if (row.paypal_order_id !== paypalOrderId) {
+      return reply.status(400).send({ error: 'PayPal-Zuordnung ungültig.' })
+    }
+    const amount = row.quoted_total_eur != null ? Number(row.quoted_total_eur) : NaN
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return reply.status(400).send({ error: 'Kein gültiger Angebotspreis.' })
+    }
+    if (row.status === 'paid') {
+      return { ok: true, status: 'paid', alreadyConfirmed: true }
+    }
+    if (row.status !== 'quoted') {
+      return reply.status(400).send({ error: 'Bestellung ist nicht mehr zahlbar (Status).' })
+    }
+    const cap = await paypalCaptureAndVerify({
+      paypalOrderId,
+      expectedVignetteOrderId: row.id,
+      expectedAmountEur: amount,
+    })
+    if (!cap.ok) {
+      return reply.status(400).send({ error: cap.reason })
+    }
+    await pool.query(
+      `UPDATE vignette_order_requests
+       SET status = 'paid', paid_at = now(), updated_at = now()
+       WHERE id = $1::uuid AND status = 'quoted'`,
+      [row.id],
+    )
+    return { ok: true, status: 'paid' }
   })
 
   app.get('/api/admin/vignette-service-products', { preHandler: [authenticate, requireAdmin] }, async () => {
@@ -481,7 +614,7 @@ export async function registerVignetteServiceRoutes(app: FastifyInstance) {
         `Route / Titel: ${prevRow.route_label || '—'}`,
         `Angebotssumme: ${newQuoted.toFixed(2)} € (inkl. Gebühren nach Abstimmung)`,
         ``,
-        `Zahlung (sofern eingerichtet): ${base}/profile`,
+        `Zahlung unter Profil (Stripe und/oder PayPal, je nach Einrichtung): ${base}/profile`,
         ``,
         `Viele Grüße`,
         `Dein Yol-Team`,

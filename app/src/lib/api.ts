@@ -2,6 +2,8 @@
  * Relativer Pfad `/api` (Dev-Proxy, Web hinter Reverse-Proxy) oder absolute Basis
  * wenn `VITE_API_BASE_URL` gesetzt (z. B. Android-APK / Capacitor).
  */
+import { downsampleLineStringForApi } from './routeGeometryApi'
+
 function apiBasePrefix(): string {
   const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
   if (raw && typeof raw === 'string' && raw.trim().length > 0) {
@@ -11,6 +13,20 @@ function apiBasePrefix(): string {
 }
 
 const GENERIC_SERVER_ERR = 'Internal Server Error'
+
+function formatZodStyleError(errObj: object): string | null {
+  const fe = (errObj as { fieldErrors?: Record<string, unknown> }).fieldErrors
+  if (!fe || typeof fe !== 'object') return null
+  const parts: string[] = []
+  for (const [key, val] of Object.entries(fe)) {
+    if (Array.isArray(val)) {
+      for (const v of val) {
+        if (typeof v === 'string' && v.trim()) parts.push(`${key}: ${v.trim()}`)
+      }
+    }
+  }
+  return parts.length ? parts.join(' · ') : null
+}
 
 async function parseError(res: Response): Promise<string> {
   try {
@@ -22,7 +38,11 @@ async function parseError(res: Response): Promise<string> {
     if (err && err !== GENERIC_SERVER_ERR) return err
     if (msg) return msg
     if (err) return err
-    if (j?.error && typeof j.error === 'object') return JSON.stringify(j.error)
+    if (j?.error && typeof j.error === 'object' && j.error !== null) {
+      const flat = formatZodStyleError(j.error)
+      if (flat) return flat
+      return JSON.stringify(j.error)
+    }
   } catch {
     /* ignore */
   }
@@ -444,10 +464,11 @@ export async function fetchRouteTollAdvice(
   token?: string | null,
   opts?: { signal?: AbortSignal },
 ) {
+  const g = downsampleLineStringForApi(geometry)
   return apiFetch<RouteTollAdviceDto>('/route/toll-advice', {
     method: 'POST',
     token: token ?? undefined,
-    body: JSON.stringify({ geometry, vehicleClass }),
+    body: JSON.stringify({ geometry: g, vehicleClass }),
     signal: opts?.signal,
   })
 }
@@ -498,10 +519,11 @@ export async function fetchRouteBriefing(
   token?: string | null,
   opts?: { signal?: AbortSignal; corridor?: string },
 ) {
+  const g = downsampleLineStringForApi(geometry)
   return apiFetch<RouteBriefingDto>('/route/briefing', {
     method: 'POST',
     token: token ?? undefined,
-    body: JSON.stringify({ geometry, vehicleClass, corridor: opts?.corridor ?? 'berlin_turkey' }),
+    body: JSON.stringify({ geometry: g, vehicleClass, corridor: opts?.corridor ?? 'berlin_turkey' }),
     signal: opts?.signal,
   })
 }
@@ -527,10 +549,14 @@ export async function askRouteAssistant(
   },
   opts?: { signal?: AbortSignal; token?: string | null },
 ) {
+  const payload =
+    body.geometry != null
+      ? { ...body, geometry: downsampleLineStringForApi(body.geometry) }
+      : body
   return apiFetch<AssistantAskDto>('/assistant/ask', {
     method: 'POST',
     token: opts?.token ?? undefined,
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     signal: opts?.signal,
   })
 }
@@ -680,6 +706,41 @@ export async function fetchAdminStats(token: string) {
       vignetteOrders?: number
     }
   }>('/admin/stats', { token })
+}
+
+export type AdminPaymentSettingsDto = {
+  publicWebAppUrl: string
+  envVarsDoc: {
+    stripe: string[]
+    paypal: string[]
+    appUrl: string[]
+    mail: string[]
+  }
+  stripe: {
+    configured: boolean
+    keyKind: 'test' | 'live' | 'custom' | null
+  }
+  paypal: {
+    configured: boolean
+    mode: 'sandbox' | 'live' | null
+    clientIdPreview: string | null
+    apiBase: string | null
+  }
+  mail: {
+    smtpConfigured: boolean
+    vignetteAdminEmailSet: boolean
+    vignetteAdminEmailHint: string | null
+  }
+  vignetteCheckoutUrls: {
+    stripeSuccess: string
+    stripeCancel: string
+    paypalReturn: string
+    paypalCancel: string
+  }
+}
+
+export async function fetchAdminPaymentSettings(token: string) {
+  return apiFetch<AdminPaymentSettingsDto>('/admin/payment-settings', { token })
 }
 
 export type AdminUserRow = {
@@ -854,7 +915,10 @@ export type MyVignetteOrderDto = {
   quotedTotalEur: number | null
   createdAt: string
   paidAt: string | null
-  canPay: boolean
+  /** Stripe Checkout verfügbar */
+  canPayStripe: boolean
+  /** PayPal (Orders API) verfügbar */
+  canPayPaypal: boolean
 }
 
 export async function fetchMyVignetteOrderRequests(token: string) {
@@ -876,6 +940,25 @@ export async function confirmVignetteStripeCheckout(token: string, sessionId: st
       method: 'POST',
       token,
       body: JSON.stringify({ sessionId }),
+    },
+  )
+}
+
+export async function createVignettePaypalCheckoutSession(token: string, orderId: string) {
+  return apiFetch<{ url: string }>(`/vignette-order-requests/${orderId}/paypal-checkout`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({}),
+  })
+}
+
+export async function confirmVignettePaypalCheckout(token: string, paypalOrderId: string) {
+  return apiFetch<{ ok: boolean; status?: string; alreadyConfirmed?: boolean }>(
+    '/vignette-order-requests/confirm-paypal',
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ paypalOrderId }),
     },
   )
 }

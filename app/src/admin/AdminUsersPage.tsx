@@ -3,7 +3,7 @@ import { fetchAdminUsers, patchAdminUser, type AdminUserRow } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
 export function AdminUsersPage() {
-  const { token } = useAuth()
+  const { token, user, refreshMe } = useAuth()
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [q, setQ] = useState('')
   const [err, setErr] = useState<string | null>(null)
@@ -32,6 +32,7 @@ export function AdminUsersPage() {
     try {
       await patchAdminUser(token, u.id, { role })
       await load()
+      if (user?.id === u.id && role === 'user') await refreshMe()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Speichern fehlgeschlagen')
     } finally {
@@ -42,6 +43,10 @@ export function AdminUsersPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <h1 className="text-2xl font-black text-on-surface">Nutzer</h1>
+      <p className="text-xs text-on-surface-variant">
+        Admins können andere Konten zur Rolle <strong>admin</strong> hochstufen oder wieder auf <strong>user</strong>
+        setzen. Der letzte verbleibende Admin kann nicht zurückgestuft werden.
+      </p>
       <div className="flex flex-wrap gap-2">
         <input
           value={q}
@@ -83,26 +88,31 @@ export function AdminUsersPage() {
                   </span>
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {u.role !== 'admin' ? (
-                      <button
-                        type="button"
-                        disabled={busyId === u.id}
-                        onClick={() => void setRole(u, 'admin')}
-                        className="rounded-lg bg-primary px-2 py-1 text-[11px] font-bold text-on-primary disabled:opacity-40"
-                      >
-                        Admin
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={busyId === u.id}
-                        onClick={() => void setRole(u, 'user')}
-                        className="rounded-lg border border-outline-variant px-2 py-1 text-[11px] font-bold"
-                      >
-                        User
-                      </button>
-                    )}
+                  <div className="flex flex-col gap-1">
+                    {user?.id === u.id ? (
+                      <span className="text-[10px] font-bold text-on-surface-variant">Dein Konto</span>
+                    ) : null}
+                    <div className="flex flex-wrap gap-1">
+                      {u.role !== 'admin' ? (
+                        <button
+                          type="button"
+                          disabled={busyId === u.id}
+                          onClick={() => void setRole(u, 'admin')}
+                          className="rounded-lg bg-primary px-2 py-1 text-[11px] font-bold text-on-primary disabled:opacity-40"
+                        >
+                          Zu Admin hochstufen
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busyId === u.id}
+                          onClick={() => void setRole(u, 'user')}
+                          className="rounded-lg border border-outline-variant px-2 py-1 text-[11px] font-bold disabled:opacity-40"
+                        >
+                          Admin entziehen
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </td>
               </tr>

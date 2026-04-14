@@ -6,7 +6,14 @@ import { AuthProvider } from './context/AuthContext'
 import './index.css'
 import App from './App.tsx'
 
-registerSW({ immediate: true })
+/** Nach erstem Paint registrieren; Fehler dürfen die App nicht blockieren (weiße Seite). */
+queueMicrotask(() => {
+  try {
+    registerSW({ immediate: true })
+  } catch (e) {
+    console.warn('[PWA] Service Worker konnte nicht registriert werden.', e)
+  }
+})
 
 const rootEl = document.getElementById('root')
 if (!rootEl) {

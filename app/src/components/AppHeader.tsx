@@ -53,12 +53,22 @@ export function AppHeader({ title, showBack }: AppHeaderProps) {
           <option value="en">EN</option>
         </select>
         {!loading && user ? (
-          <Link
-            to="/profile"
-            className="max-w-[100px] truncate text-sm font-bold text-primary underline sm:max-w-[140px]"
-          >
-            {user.displayName}
-          </Link>
+          <>
+            <Link
+              to="/groups"
+              className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-primary hover:bg-surface-container-low sm:px-2"
+              aria-label={t('navGroups')}
+            >
+              <span className="material-symbols-outlined text-[22px] sm:text-2xl">groups</span>
+              <span className="hidden text-xs font-bold sm:inline">{t('navGroups')}</span>
+            </Link>
+            <Link
+              to="/profile"
+              className="max-w-[100px] truncate text-sm font-bold text-primary underline sm:max-w-[140px]"
+            >
+              {user.displayName}
+            </Link>
+          </>
         ) : !loading ? (
           <Link to="/login" className="text-sm font-bold text-primary">
             {t('login')}

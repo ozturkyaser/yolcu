@@ -13,12 +13,14 @@ import { GroupsPage } from './pages/GroupsPage'
 import { GroupChatPage } from './pages/GroupChatPage'
 import { RideMarketplacePage } from './pages/RideMarketplacePage'
 import { AdminSection } from './admin/AdminSection'
+import { AppBuildStamp } from './components/AppBuildStamp'
 
 export default function App() {
   return (
     <I18nProvider>
     <BrowserRouter>
       <WelcomeOnboarding />
+      <AppBuildStamp />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

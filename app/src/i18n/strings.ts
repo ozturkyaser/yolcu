@@ -88,7 +88,7 @@ export const STRINGS: Record<Lang, Record<string, string>> = {
     rides_field_from: 'Von (Ort / Start)',
     rides_field_to: 'Nach (Ziel)',
     rides_field_when: 'Wann / Flexibilität',
-    rides_field_when_ph: 'z. B. Fr. Abend, 12.4. gegen 18 Uhr',
+    rides_field_when_ph: 'z. B. Fr. Abend, 12.4. gegen 18 Uhr',
     rides_field_seats: 'Freie Plätze (1–12)',
     rides_field_cargo: 'Platz für Ware (Kurzbeschreibung)',
     rides_field_details: 'Details zum Ablauf, Treffpunkt, Kostenabsprache …',

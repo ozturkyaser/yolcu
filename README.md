@@ -43,6 +43,10 @@ docker compose up -d --build
 cd app && npm install && npm run dev
 ```
 
+**Wenn die App nicht startet:** immer aus **`app/`** starten (`cd app`), nicht im Repo-Root. Port **5173** belegt → Vite weicht automatisch auf den nächsten freien Port aus (`strictPort: false`). Fehlende Module: `cd app && rm -rf node_modules && npm install`. Ohne laufende API zeigt die Karte/Login ggf. Fehler – API auf Port **4000** starten oder Docker-Stack nutzen.
+
+**Ortssuche (Nominatim):** In `docker-compose.yml` ist `GEOCODING_USER_AGENT` mit Default gesetzt; für Produktion eine **echte Kontakt-URL oder E-Mail** eintragen, sonst antwortet OSM oft mit **403**. Lokal ohne Docker: `GEOCODING_USER_AGENT` in `api/.env` setzen.
+
 - Web: **http://localhost:5173**  
 - API: **http://localhost:4000/api/health**  
 - Erster Start: API legt Tabellen an (`INIT_DB=true`) und seedet Grenze `horgos`.

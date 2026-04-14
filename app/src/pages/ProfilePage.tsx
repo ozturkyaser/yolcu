@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   apiFetch,
+  confirmVignettePaypalCheckout,
   confirmVignetteStripeCheckout,
+  createVignettePaypalCheckoutSession,
   createVignetteStripeCheckoutSession,
   fetchMyVignetteOrderRequests,
   type MyVignetteOrderDto,
@@ -28,6 +30,8 @@ export function ProfilePage() {
   const [vignetteOrders, setVignetteOrders] = useState<MyVignetteOrderDto[]>([])
   const [vignetteLoading, setVignetteLoading] = useState(false)
   const [vignettePayBusy, setVignettePayBusy] = useState<string | null>(null)
+
+  const searchQuery = useMemo(() => searchParams.toString(), [searchParams])
 
   useEffect(() => {
     if (!token) {
@@ -76,8 +80,9 @@ export function ProfilePage() {
   }, [token])
 
   useEffect(() => {
-    const checkout = searchParams.get('vignetteCheckout')
-    const sessionId = searchParams.get('session_id')
+    const params = new URLSearchParams(searchQuery)
+    const checkout = params.get('vignetteCheckout')
+    const sessionId = params.get('session_id')
     if (!token || checkout !== 'success' || !sessionId) return
     let cancelled = false
     void (async () => {
@@ -93,7 +98,7 @@ export function ProfilePage() {
         if (!cancelled) setMsg(e instanceof Error ? e.message : 'Zahlungsbestätigung fehlgeschlagen.')
       } finally {
         if (!cancelled) {
-          const next = new URLSearchParams(searchParams)
+          const next = new URLSearchParams(searchQuery)
           next.delete('vignetteCheckout')
           next.delete('session_id')
           setSearchParams(next, { replace: true })
@@ -103,15 +108,50 @@ export function ProfilePage() {
     return () => {
       cancelled = true
     }
-  }, [token, searchParams, setSearchParams])
+  }, [token, searchQuery, setSearchParams])
 
   useEffect(() => {
-    if (searchParams.get('vignetteCheckout') !== 'cancel') return
-    setMsg('Zahlung abgebrochen.')
-    const next = new URLSearchParams(searchParams)
-    next.delete('vignetteCheckout')
-    setSearchParams(next, { replace: true })
-  }, [searchParams, setSearchParams])
+    const params = new URLSearchParams(searchQuery)
+    const checkout = params.get('vignetteCheckout')
+    const paypalOrderId = params.get('token')
+    if (!token || checkout !== 'paypal_success' || !paypalOrderId) return
+    let cancelled = false
+    void (async () => {
+      setMsg(null)
+      try {
+        await confirmVignettePaypalCheckout(token, paypalOrderId)
+        if (!cancelled) {
+          setMsg('PayPal-Zahlung bestätigt – vielen Dank!')
+          const { requests } = await fetchMyVignetteOrderRequests(token)
+          setVignetteOrders(requests)
+        }
+      } catch (e) {
+        if (!cancelled) setMsg(e instanceof Error ? e.message : 'PayPal-Bestätigung fehlgeschlagen.')
+      } finally {
+        if (!cancelled) {
+          const next = new URLSearchParams(searchQuery)
+          next.delete('vignetteCheckout')
+          next.delete('token')
+          next.delete('PayerID')
+          setSearchParams(next, { replace: true })
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [token, searchQuery, setSearchParams])
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchQuery)
+    const v = params.get('vignetteCheckout')
+    if (v !== 'cancel' && v !== 'paypal_cancel') return
+    setMsg(v === 'paypal_cancel' ? 'PayPal abgebrochen.' : 'Zahlung abgebrochen.')
+    params.delete('vignetteCheckout')
+    params.delete('token')
+    params.delete('PayerID')
+    setSearchParams(params, { replace: true })
+  }, [searchQuery, setSearchParams])
 
   if (authLoading || (token && loading)) {
     return (
@@ -256,7 +296,7 @@ export function ProfilePage() {
           Fahrzeugklasse (Vignette / Maut)
         </label>
         <p className="mb-2 text-xs text-on-surface-variant">
-          Wird für Hinweise entlang deiner Route verwendet (z. B. Pkw vs. Motorrad vs. Nutzfahrzeug).
+          Wird für Hinweise entlang deiner Route verwendet (z. B. Pkw vs. Motorrad vs. Nutzfahrzeug).
         </p>
         <select
           value={tollVehicleClass}
@@ -327,8 +367,9 @@ export function ProfilePage() {
             <Link to="/" className="font-bold text-primary underline">
               Karte
             </Link>{' '}
-            eine Service-Anfrage senden. Nach unserem Angebot kannst du hier per Stripe bezahlen (wenn die API
-            dafür konfiguriert ist).
+            eine Service-Anfrage senden. Das Team setzt ein <strong className="text-on-surface">kumuliertes
+            Gesamtangebot</strong> für deine Auswahl; danach zahlst du hier <strong className="text-on-surface">einen
+            Betrag</strong> (Stripe und/oder PayPal, je nach Server-Konfiguration).
           </p>
         </div>
         <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-4 py-4">
@@ -355,28 +396,55 @@ export function ProfilePage() {
                       <p className="text-xs font-semibold text-on-surface">Angebot: {o.quotedTotalEur.toFixed(2)} €</p>
                     ) : null}
                   </div>
-                  {o.canPay ? (
-                    <button
-                      type="button"
-                      disabled={vignettePayBusy === o.id}
-                      onClick={() => {
-                        if (!token) return
-                        void (async () => {
-                          setVignettePayBusy(o.id)
-                          try {
-                            const { url } = await createVignetteStripeCheckoutSession(token, o.id)
-                            window.location.href = url
-                          } catch (e) {
-                            setMsg(e instanceof Error ? e.message : 'Checkout nicht möglich.')
-                          } finally {
-                            setVignettePayBusy(null)
-                          }
-                        })()
-                      }}
-                      className="shrink-0 rounded-xl bg-secondary px-4 py-2 text-xs font-black text-on-secondary disabled:opacity-40"
-                    >
-                      {vignettePayBusy === o.id ? '…' : 'Jetzt bezahlen (Stripe)'}
-                    </button>
+                  {o.canPayStripe || o.canPayPaypal ? (
+                    <div className="flex shrink-0 flex-col gap-1.5">
+                      {o.canPayStripe ? (
+                        <button
+                          type="button"
+                          disabled={vignettePayBusy === `${o.id}-stripe`}
+                          onClick={() => {
+                            if (!token) return
+                            void (async () => {
+                              setVignettePayBusy(`${o.id}-stripe`)
+                              try {
+                                const { url } = await createVignetteStripeCheckoutSession(token, o.id)
+                                window.location.href = url
+                              } catch (e) {
+                                setMsg(e instanceof Error ? e.message : 'Stripe-Checkout nicht möglich.')
+                              } finally {
+                                setVignettePayBusy(null)
+                              }
+                            })()
+                          }}
+                          className="rounded-xl bg-secondary px-4 py-2 text-xs font-black text-on-secondary disabled:opacity-40"
+                        >
+                          {vignettePayBusy === `${o.id}-stripe` ? '…' : 'Bezahlen (Stripe)'}
+                        </button>
+                      ) : null}
+                      {o.canPayPaypal ? (
+                        <button
+                          type="button"
+                          disabled={vignettePayBusy === `${o.id}-paypal`}
+                          onClick={() => {
+                            if (!token) return
+                            void (async () => {
+                              setVignettePayBusy(`${o.id}-paypal`)
+                              try {
+                                const { url } = await createVignettePaypalCheckoutSession(token, o.id)
+                                window.location.href = url
+                              } catch (e) {
+                                setMsg(e instanceof Error ? e.message : 'PayPal-Checkout nicht möglich.')
+                              } finally {
+                                setVignettePayBusy(null)
+                              }
+                            })()
+                          }}
+                          className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-2 text-xs font-black text-on-surface disabled:opacity-40"
+                        >
+                          {vignettePayBusy === `${o.id}-paypal` ? '…' : 'Bezahlen (PayPal)'}
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </li>
               ))}

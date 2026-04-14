@@ -134,7 +134,7 @@ export function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: numbe
 /** Exponentieller Tiefpass für Kompass (vermeidet Ruckeln). */
 export function smoothBearingDeg(prev: number | null, target: number, alpha: number): number {
   if (prev == null || !Number.isFinite(prev)) return target
-  let delta = ((target - prev + 540) % 360) - 180
+  const delta = ((target - prev + 540) % 360) - 180
   let next = prev + alpha * delta
   next = ((next % 360) + 360) % 360
   return next

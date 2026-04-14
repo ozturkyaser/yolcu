@@ -1044,13 +1044,14 @@ export function MapDashboardPage() {
   }, [tollVehicleResolved])
 
   const routeTollSnapshotKey = useMemo(() => {
+    if (tollAdviceLoading) return null
     if (!routeGeometry?.coordinates?.length || !tollAdvice?.countries?.length) return null
     const coords = routeGeometry.coordinates
     const a = coords[0]
     const b = coords[coords.length - 1]
     const codes = tollAdvice.countries.map((c) => c.code).join(',')
     return `${a[0]},${a[1]}|${b[0]},${b[1]}|${codes}`
-  }, [routeGeometry, tollAdvice])
+  }, [routeGeometry, tollAdvice, tollAdviceLoading])
 
   const openVignetteServiceModal = useCallback(
     async (opts?: {
@@ -1121,6 +1122,9 @@ export function MapDashboardPage() {
     ],
   )
 
+  const openVignetteServiceModalRef = useRef(openVignetteServiceModal)
+  openVignetteServiceModalRef.current = openVignetteServiceModal
+
   useEffect(() => {
     if (!routeGeometry?.coordinates?.length) vignetteAutoOpenedRouteKeyRef.current = null
   }, [routeGeometry?.coordinates?.length])
@@ -1132,7 +1136,7 @@ export function MapDashboardPage() {
     if (!tollAdvice?.countries?.length) return
     if (vignetteModalOpen) return
     if (vignetteAutoOpenedRouteKeyRef.current === routeTollSnapshotKey) return
-    void openVignetteServiceModal({
+    void openVignetteServiceModalRef.current({
       advice: tollAdvice,
       routeLabel: navTarget?.label ?? null,
       autoMarkKey: routeTollSnapshotKey,
@@ -1144,7 +1148,6 @@ export function MapDashboardPage() {
     tollAdviceErr,
     tollAdvice,
     vignetteModalOpen,
-    openVignetteServiceModal,
     navTarget?.label,
   ])
 
@@ -1332,6 +1335,7 @@ export function MapDashboardPage() {
     }
     const ac = new AbortController()
     const run = async () => {
+      setTollAdvice(null)
       setTollAdviceLoading(true)
       setTollAdviceErr(null)
       try {
@@ -2626,7 +2630,10 @@ export function MapDashboardPage() {
         </div>
       ) : null}
 
-      {typeof document !== 'undefined' && vignetteModalOpen && vignetteAdviceForModal
+      {typeof document !== 'undefined' &&
+      document.body &&
+      vignetteModalOpen &&
+      vignetteAdviceForModal
         ? createPortal(
             <div
               className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/45 p-4 sm:items-center"

@@ -155,6 +155,7 @@ async function ensureVignetteOrderPaymentColumns(): Promise<void> {
     `ALTER TABLE vignette_order_requests ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT`,
   )
   await pool.query(`ALTER TABLE vignette_order_requests ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`)
+  await pool.query(`ALTER TABLE vignette_order_requests ADD COLUMN IF NOT EXISTS paypal_order_id TEXT`)
 }
 
 async function seedVignetteServiceProductsIfEmpty(): Promise<void> {

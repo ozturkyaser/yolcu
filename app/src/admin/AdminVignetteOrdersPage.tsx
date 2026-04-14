@@ -10,6 +10,15 @@ import { useAuth } from '../context/AuthContext'
 
 const statusOptions = ['pending', 'in_review', 'quoted', 'paid', 'fulfilled', 'cancelled'] as const
 
+const statusLabelDe: Record<string, string> = {
+  pending: 'Neu',
+  in_review: 'In Prüfung',
+  quoted: 'Angebot',
+  paid: 'Bezahlt',
+  fulfilled: 'Erfüllt',
+  cancelled: 'Storniert',
+}
+
 function formatCountries(raw: unknown): string {
   if (!Array.isArray(raw)) return '—'
   const parts = raw
@@ -39,6 +48,22 @@ export function AdminVignetteOrdersPage() {
     for (const p of catalog) m.set(p.id, p.title)
     return m
   }, [catalog])
+
+  const catalogSumByRequest = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of requests) {
+      let sum = 0
+      for (const id of r.productIds) {
+        const p = catalog.find((x) => x.id === id)
+        if (p) {
+          sum += p.serviceFeeEur
+          if (p.retailHintEur != null) sum += p.retailHintEur
+        }
+      }
+      m.set(r.id, sum)
+    }
+    return m
+  }, [requests, catalog])
 
   const load = useCallback(async () => {
     if (!token) return
@@ -111,8 +136,10 @@ export function AdminVignetteOrdersPage() {
         </button>
       </div>
       <p className="text-xs text-on-surface-variant">
-        Kunden senden aus der Navigation eine Auswahl; ihr setzt Status, interne Notiz und optional ein
-        Gesamtangebot (Gebühren + Service).
+        Kunden senden aus der Navigation eine Auswahl. Produkte und Preise (Servicepauschale, Richtpreis-Hinweis)
+        pflegt ihr unter <strong className="text-on-surface">Vignetten → Katalog</strong>. Beim Angebot legt ihr die
+        <strong className="text-on-surface"> kumulierte Gesamtsumme</strong> fest; der Kunde zahlt genau diesen einen
+        Betrag (Stripe/PayPal).
       </p>
       {err ? <p className="rounded-xl bg-error-container px-3 py-2 text-sm text-on-error-container">{err}</p> : null}
       <ul className="space-y-2">
@@ -130,7 +157,7 @@ export function AdminVignetteOrdersPage() {
                 </p>
                 <p className="mt-1 text-xs text-on-surface-variant">{formatCountries(r.countries)}</p>
                 <p className="text-[11px] uppercase text-primary">
-                  {r.status}
+                  {statusLabelDe[r.status] ?? r.status}
                   {r.paidAt ? ` · bezahlt ${new Date(r.paidAt).toLocaleString('de-DE')}` : ''}
                 </p>
               </div>
@@ -163,7 +190,7 @@ export function AdminVignetteOrdersPage() {
                 >
                   {statusOptions.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {statusLabelDe[s] ?? s}
                     </option>
                   ))}
                 </select>
@@ -174,13 +201,29 @@ export function AdminVignetteOrdersPage() {
                   className="min-h-[4rem] rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
                   maxLength={2000}
                 />
-                <label className="text-[11px] font-bold text-on-surface-variant">Angebotssumme EUR (optional)</label>
+                <label className="text-[11px] font-bold text-on-surface-variant">Angebotssumme EUR (kumulativ)</label>
+                <p className="text-[11px] text-on-surface-variant">
+                  Indikativ aus Katalog (Summe Service + Richtpreis-Hinweise):{' '}
+                  <span className="font-bold text-on-surface">
+                    {(catalogSumByRequest.get(r.id) ?? 0).toFixed(2)} €
+                  </span>
+                </p>
                 <input
                   value={draft.quotedTotalEur}
                   onChange={(e) => setDraft((d) => ({ ...d, quotedTotalEur: e.target.value }))}
                   className="rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
-                  placeholder="leer = noch kein Angebot"
+                  placeholder="z. B. 49,90 — ein Betrag für die ganze Anfrage"
                 />
+                <button
+                  type="button"
+                  className="rounded-lg border border-outline-variant px-3 py-1.5 text-[11px] font-bold text-primary"
+                  onClick={() => {
+                    const v = catalogSumByRequest.get(r.id) ?? 0
+                    setDraft((d) => ({ ...d, quotedTotalEur: v > 0 ? v.toFixed(2) : '' }))
+                  }}
+                >
+                  Katalog-Summe ins Feld übernehmen
+                </button>
                 <button
                   type="button"
                   disabled={busyId === r.id}

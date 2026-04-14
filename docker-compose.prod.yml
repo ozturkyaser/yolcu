@@ -63,6 +63,8 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      args:
+        VITE_APP_BUILD_NUMBER: ${VITE_APP_BUILD_NUMBER:-0}
     restart: unless-stopped
     expose:
       - '80'

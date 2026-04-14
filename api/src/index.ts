@@ -14,6 +14,7 @@ import { fetchDrivingRouteOsrm } from './routing.js'
 import {
   collectCountriesAlongRoute,
   countryName,
+  downsampleLineStringCoordinates,
   productsForCountries,
   type TollVehicleClass,
 } from './routeTollAdvice.js'
@@ -626,13 +627,19 @@ async function buildServer() {
 
     const ua =
       process.env.GEOCODING_USER_AGENT?.trim() ||
-      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+      'YolArkadasim/1.0 (dev@yol.local; setze GEOCODING_USER_AGENT in .env laut OSM-Nominatim)'
 
-    const coords = parsed.data.geometry.coordinates as [number, number][]
+    let coords = parsed.data.geometry.coordinates as [number, number][]
+    if (coords.length > 24_000) coords = downsampleLineStringCoordinates(coords, 24_000)
     const vehicleClass = parsed.data.vehicleClass as TollVehicleClass
 
     try {
-      const hits = await collectCountriesAlongRoute(coords, ua, { maxReverseCalls: 8, delayMs: 1050 })
+      const hits = await collectCountriesAlongRoute(coords, ua, {
+        maxReverseCalls: 22,
+        maxGapMidpoints: 16,
+        minGapMidpointM: 62_000,
+        delayMs: 1050,
+      })
       const countryCodes = hits.map((h) => h.countryCode)
       const products = productsForCountries(countryCodes, vehicleClass).map((p) => ({
         id: p.id,
@@ -671,12 +678,18 @@ async function buildServer() {
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
     const ua =
       process.env.GEOCODING_USER_AGENT?.trim() ||
-      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+      'YolArkadasim/1.0 (dev@yol.local; setze GEOCODING_USER_AGENT in .env laut OSM-Nominatim)'
     const vehicleClass = parsed.data.vehicleClass as TollVehicleClass
     const corridor = parsed.data.corridor
-    const coords = parsed.data.geometry.coordinates as [number, number][]
+    let coords = parsed.data.geometry.coordinates as [number, number][]
+    if (coords.length > 24_000) coords = downsampleLineStringCoordinates(coords, 24_000)
     try {
-      const hits = await collectCountriesAlongRoute(coords, ua, { maxReverseCalls: 8, delayMs: 1050 })
+      const hits = await collectCountriesAlongRoute(coords, ua, {
+        maxReverseCalls: 22,
+        maxGapMidpoints: 16,
+        minGapMidpointM: 62_000,
+        delayMs: 1050,
+      })
       const countryCodes = hits.map((h) => h.countryCode)
       const countries = hits.map((h) => ({ code: h.countryCode, name: countryName(h.countryCode) }))
 
@@ -840,14 +853,18 @@ async function buildServer() {
 
     const ua =
       process.env.GEOCODING_USER_AGENT?.trim() ||
-      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+      'YolArkadasim/1.0 (dev@yol.local; setze GEOCODING_USER_AGENT in .env laut OSM-Nominatim)'
 
     try {
       let countryCodes: string[] = []
       let countries: Array<{ code: string; name: string }> = []
       if (parsed.data.geometry) {
-        const hits = await collectCountriesAlongRoute(parsed.data.geometry.coordinates as [number, number][], ua, {
-          maxReverseCalls: 8,
+        let gcoords = parsed.data.geometry.coordinates as [number, number][]
+        if (gcoords.length > 24_000) gcoords = downsampleLineStringCoordinates(gcoords, 24_000)
+        const hits = await collectCountriesAlongRoute(gcoords, ua, {
+          maxReverseCalls: 22,
+          maxGapMidpoints: 16,
+          minGapMidpointM: 62_000,
           delayMs: 1050,
         })
         countryCodes = hits.map((h) => h.countryCode)

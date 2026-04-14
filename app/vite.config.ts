@@ -40,7 +40,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      /** `prompt` vermeidet automatische Client-Reloads nach Deploy (häufige Ursache für „hängende“/weiße Seite). */
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Yol Arkadaşım',

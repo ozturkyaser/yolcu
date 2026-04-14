@@ -298,6 +298,7 @@ CREATE TABLE IF NOT EXISTS vignette_order_requests (
   admin_note TEXT NOT NULL DEFAULT '' CHECK (char_length(admin_note) <= 2000),
   quoted_total_eur NUMERIC(10, 2),
   stripe_checkout_session_id TEXT,
+  paypal_order_id TEXT,
   paid_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
