@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { DatabaseError } from 'pg'
 import { z } from 'zod'
-import { runMigrations } from './migrate.js'
+import { ensureAuthSchemaPatches, runMigrations } from './migrate.js'
 import { pool } from './pool.js'
 import { registerGeocodeRoutes } from './geocoding.js'
 import { mapIconSchema } from './mapIcons.js'
@@ -136,6 +136,12 @@ async function buildServer() {
             'Datenbank-Tabellen fehlen. Starte die API einmalig mit INIT_DB=true oder nutze docker compose (siehe README).',
         })
       }
+      if (rawError.code === '42703') {
+        return reply.status(503).send({
+          error:
+            'Datenbank-Schema veraltet. API neu starten (Patches werden beim Start angewendet) oder INIT_DB=true einmalig setzen.',
+        })
+      }
     }
 
     const maybePg = rawError as { code?: unknown }
@@ -148,6 +154,12 @@ async function buildServer() {
       }
       if (maybePg.code === '23505') {
         return reply.status(409).send({ error: 'E-Mail bereits registriert' })
+      }
+      if (maybePg.code === '42703') {
+        return reply.status(503).send({
+          error:
+            'Datenbank-Schema veraltet. API neu starten oder INIT_DB=true einmalig setzen (siehe README).',
+        })
       }
     }
 
@@ -195,7 +207,13 @@ async function buildServer() {
 
   app.post('/api/auth/register', async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body)
-    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'Ungültige Eingabe',
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') || 'Validierung fehlgeschlagen',
+        details: parsed.error.flatten(),
+      })
+    }
 
     const { email, password, displayName } = parsed.data
     const passwordHash = await bcrypt.hash(password, 10)
@@ -219,7 +237,13 @@ async function buildServer() {
 
   app.post('/api/auth/login', async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body)
-    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'Ungültige Eingabe',
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') || 'Validierung fehlgeschlagen',
+        details: parsed.error.flatten(),
+      })
+    }
 
     const { email, password } = parsed.data
     const r = await pool.query(
@@ -228,7 +252,15 @@ async function buildServer() {
       [email.toLowerCase()],
     )
     const row = r.rows[0]
-    if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    let passwordOk = false
+    if (row?.password_hash) {
+      try {
+        passwordOk = await bcrypt.compare(password, row.password_hash)
+      } catch {
+        passwordOk = false
+      }
+    }
+    if (!row || !passwordOk) {
       return reply.status(401).send({ error: 'E-Mail oder Passwort ungültig' })
     }
 
@@ -917,6 +949,8 @@ async function main() {
     )
     process.exit(1)
   }
+
+  await ensureAuthSchemaPatches()
 
   if (process.env.INIT_DB === 'true') {
     await runMigrations()

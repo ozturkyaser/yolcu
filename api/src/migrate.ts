@@ -178,6 +178,23 @@ async function ensureVoiceMessageColumns(): Promise<void> {
   `)
 }
 
+/**
+ * Läuft bei jedem API-Start (ohne INIT_DB): fehlende Nutzer-Spalten nachziehen.
+ * Verhindert 500er bei /auth/login und /auth/register auf älteren Datenbanken.
+ * Ohne Tabelle `users` (frische DB, INIT_DB noch nie): no-op.
+ */
+export async function ensureAuthSchemaPatches(): Promise<void> {
+  const t = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'users'
+     ) AS ok`,
+  )
+  if (!t.rows[0]?.ok) return
+  await ensureMapIconColumn()
+  await ensureTollVehicleClassColumn()
+}
+
 export async function runMigrations(): Promise<void> {
   const sql = readFileSync(join(__dirname, 'schema.sql'), 'utf8')
   await pool.query(sql)

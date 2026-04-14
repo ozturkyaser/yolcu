@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS users (
       'warehouse'
     )
   ),
+  toll_vehicle_class TEXT NOT NULL DEFAULT 'car' CHECK (
+    toll_vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')
+  ),
   stats_km INTEGER NOT NULL DEFAULT 0,
   stats_regions INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
