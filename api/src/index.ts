@@ -10,6 +10,13 @@ import { pool } from './pool.js'
 import { registerGeocodeRoutes } from './geocoding.js'
 import { mapIconSchema } from './mapIcons.js'
 import { fetchDrivingRouteOsrm } from './routing.js'
+import {
+  collectCountriesAlongRoute,
+  countryName,
+  productsForCountries,
+  type TollVehicleClass,
+} from './routeTollAdvice.js'
+import { answerWithRouteAssistant } from './routeAssistant.js'
 import { registerSocialRoutes } from './socialRoutes.js'
 
 declare module '@fastify/jwt' {
@@ -197,7 +204,7 @@ async function buildServer() {
       const r = await pool.query(
         `INSERT INTO users (email, password_hash, display_name)
          VALUES ($1, $2, $3)
-         RETURNING id, email, display_name, map_icon, stats_km, stats_regions, created_at`,
+         RETURNING id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at`,
         [email.toLowerCase(), passwordHash, displayName],
       )
       const user = r.rows[0]
@@ -216,7 +223,7 @@ async function buildServer() {
 
     const { email, password } = parsed.data
     const r = await pool.query(
-      `SELECT id, email, password_hash, display_name, map_icon, stats_km, stats_regions, created_at
+      `SELECT id, email, password_hash, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at
        FROM users WHERE email = $1`,
       [email.toLowerCase()],
     )
@@ -234,7 +241,7 @@ async function buildServer() {
 
   app.get('/api/auth/me', { preHandler: authenticate }, async (request) => {
     const r = await pool.query(
-      `SELECT id, email, display_name, map_icon, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
       [request.user.sub],
     )
     const user = r.rows[0]
@@ -342,7 +349,7 @@ async function buildServer() {
 
   app.get('/api/profile', { preHandler: authenticate }, async (request, reply) => {
     const u = await pool.query(
-      `SELECT id, email, display_name, map_icon, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
       [request.user.sub],
     )
     if (!u.rows[0]) return reply.status(404).send({ error: 'Nicht gefunden' })
@@ -354,26 +361,31 @@ async function buildServer() {
   })
 
   app.put('/api/profile', { preHandler: authenticate }, async (request, reply) => {
+    const tollVehicleClassSchema = z.enum(['car', 'motorcycle', 'heavy', 'other'])
     const schema = z
       .object({
         displayName: z.string().min(1).max(80).optional(),
         mapIcon: mapIconSchema.optional(),
+        tollVehicleClass: tollVehicleClassSchema.optional(),
       })
-      .refine((d) => d.displayName !== undefined || d.mapIcon !== undefined, {
-        message: 'Mindestens Anzeigename oder Karten-Icon angeben',
+      .refine((d) => d.displayName !== undefined || d.mapIcon !== undefined || d.tollVehicleClass !== undefined, {
+        message: 'Mindestens Anzeigename, Karten-Icon oder Fahrzeugklasse angeben',
       })
     const parsed = schema.safeParse(request.body)
     if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
 
-    const { displayName, mapIcon } = parsed.data
+    const { displayName, mapIcon, tollVehicleClass } = parsed.data
     if (displayName !== undefined) {
       await pool.query(`UPDATE users SET display_name = $1 WHERE id = $2`, [displayName, request.user.sub])
     }
     if (mapIcon !== undefined) {
       await pool.query(`UPDATE users SET map_icon = $1 WHERE id = $2`, [mapIcon, request.user.sub])
     }
+    if (tollVehicleClass !== undefined) {
+      await pool.query(`UPDATE users SET toll_vehicle_class = $1 WHERE id = $2`, [tollVehicleClass, request.user.sub])
+    }
     const u = await pool.query(
-      `SELECT id, email, display_name, map_icon, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
+      `SELECT id, email, display_name, map_icon, toll_vehicle_class, stats_km, stats_regions, created_at FROM users WHERE id = $1`,
       [request.user.sub],
     )
     return { user: mapUser(u.rows[0]) }
@@ -561,6 +573,262 @@ async function buildServer() {
     return result
   })
 
+  const tollAdviceBodySchema = z.object({
+    geometry: z.object({
+      type: z.literal('LineString'),
+      coordinates: z.array(z.tuple([z.number(), z.number()])).min(2).max(25_000),
+    }),
+    vehicleClass: z.enum(['car', 'motorcycle', 'heavy', 'other']),
+  })
+
+  app.post('/api/route/toll-advice', async (request, reply) => {
+    const parsed = tollAdviceBodySchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    const ua =
+      process.env.GEOCODING_USER_AGENT?.trim() ||
+      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+
+    const coords = parsed.data.geometry.coordinates as [number, number][]
+    const vehicleClass = parsed.data.vehicleClass as TollVehicleClass
+
+    try {
+      const hits = await collectCountriesAlongRoute(coords, ua, { maxReverseCalls: 8, delayMs: 1050 })
+      const countryCodes = hits.map((h) => h.countryCode)
+      const products = productsForCountries(countryCodes, vehicleClass).map((p) => ({
+        id: p.id,
+        countryCode: p.countryCode,
+        title: p.title,
+        description: p.description,
+        type: p.type,
+        vehicleClasses: p.vehicleClasses,
+        purchaseUrl: p.purchaseUrl,
+      }))
+      const countries = hits.map((h) => ({ code: h.countryCode, name: countryName(h.countryCode) }))
+      return {
+        vehicleClass,
+        countries,
+        products,
+        disclaimer:
+          'Orientierungshilfe ohne Gewähr. Preise, Gültigkeit und Pflichten bitte auf den verlinkten offiziellen Seiten prüfen.',
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'route toll-advice failed')
+      return reply.status(503).send({ error: 'Vignetten-Infos vorübergehend nicht verfügbar.' })
+    }
+  })
+
+  const routeBriefingBodySchema = z.object({
+    geometry: z.object({
+      type: z.literal('LineString'),
+      coordinates: z.array(z.tuple([z.number(), z.number()])).min(2).max(25_000),
+    }),
+    vehicleClass: z.enum(['car', 'motorcycle', 'heavy', 'other']),
+    corridor: z.string().max(80).optional().default('berlin_turkey'),
+  })
+
+  app.post('/api/route/briefing', async (request, reply) => {
+    const parsed = routeBriefingBodySchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+    const ua =
+      process.env.GEOCODING_USER_AGENT?.trim() ||
+      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+    const vehicleClass = parsed.data.vehicleClass as TollVehicleClass
+    const corridor = parsed.data.corridor
+    const coords = parsed.data.geometry.coordinates as [number, number][]
+    try {
+      const hits = await collectCountriesAlongRoute(coords, ua, { maxReverseCalls: 8, delayMs: 1050 })
+      const countryCodes = hits.map((h) => h.countryCode)
+      const countries = hits.map((h) => ({ code: h.countryCode, name: countryName(h.countryCode) }))
+
+      const factsRes =
+        countryCodes.length > 0
+          ? await pool.query(
+              `SELECT country_code, fact_key, title, content, source_url, verified_at
+               FROM kb_country_facts
+               WHERE country_code = ANY($1::text[])
+               ORDER BY country_code, fact_key`,
+              [countryCodes],
+            )
+          : { rows: [] as Array<Record<string, unknown>> }
+
+      const tollRes =
+        countryCodes.length > 0
+          ? await pool.query(
+              `SELECT id, country_code, vehicle_class, kind, title, description, purchase_url, source_url, verified_at
+               FROM kb_toll_offers
+               WHERE country_code = ANY($1::text[])
+                 AND (vehicle_class = $2 OR vehicle_class = 'other')
+               ORDER BY country_code, title`,
+              [countryCodes, vehicleClass],
+            )
+          : { rows: [] as Array<Record<string, unknown>> }
+
+      const faqRes = await pool.query(
+        `SELECT id, question, answer, tags, source_url, verified_at
+         FROM kb_route_faq
+         WHERE corridor = $1
+         ORDER BY id
+         LIMIT 12`,
+        [corridor],
+      )
+
+      return {
+        corridor,
+        vehicleClass,
+        countries,
+        countryFacts: factsRes.rows.map((r) => ({
+          countryCode: String(r.country_code),
+          key: String(r.fact_key),
+          title: String(r.title),
+          content: String(r.content),
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+          verifiedAt: String(r.verified_at),
+        })),
+        tollOffers: tollRes.rows.map((r) => ({
+          id: String(r.id),
+          countryCode: String(r.country_code),
+          vehicleClass: String(r.vehicle_class),
+          kind: String(r.kind),
+          title: String(r.title),
+          description: String(r.description),
+          purchaseUrl: String(r.purchase_url),
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+          verifiedAt: String(r.verified_at),
+        })),
+        faq: faqRes.rows.map((r) => ({
+          id: String(r.id),
+          question: String(r.question),
+          answer: String(r.answer),
+          tags: Array.isArray(r.tags) ? r.tags.map((x: unknown) => String(x)) : [],
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+          verifiedAt: String(r.verified_at),
+        })),
+        disclaimer:
+          'Hinweise dienen der Planung. Rechtliche Vorgaben, Preise und Verfügbarkeit immer bei offiziellen Stellen prüfen.',
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'route briefing failed')
+      return reply.status(503).send({ error: 'Route-Briefing aktuell nicht verfügbar.' })
+    }
+  })
+
+  const assistantAskBodySchema = z.object({
+    question: z.string().min(3).max(800),
+    corridor: z.string().max(80).optional().default('berlin_turkey'),
+    vehicleClass: z.enum(['car', 'motorcycle', 'heavy', 'other']).optional().default('car'),
+    geometry: z
+      .object({
+        type: z.literal('LineString'),
+        coordinates: z.array(z.tuple([z.number(), z.number()])).min(2).max(25_000),
+      })
+      .optional(),
+  })
+
+  app.post('/api/assistant/ask', async (request, reply) => {
+    const parsed = assistantAskBodySchema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    const ua =
+      process.env.GEOCODING_USER_AGENT?.trim() ||
+      'YolArkadasim/1.0 (dev; setze GEOCODING_USER_AGENT in .env laut OSM-Richtlinie)'
+
+    try {
+      let countryCodes: string[] = []
+      let countries: Array<{ code: string; name: string }> = []
+      if (parsed.data.geometry) {
+        const hits = await collectCountriesAlongRoute(parsed.data.geometry.coordinates as [number, number][], ua, {
+          maxReverseCalls: 8,
+          delayMs: 1050,
+        })
+        countryCodes = hits.map((h) => h.countryCode)
+        countries = hits.map((h) => ({ code: h.countryCode, name: countryName(h.countryCode) }))
+      }
+
+      const factsRes =
+        countryCodes.length > 0
+          ? await pool.query(
+              `SELECT country_code, title, content, source_url
+               FROM kb_country_facts
+               WHERE country_code = ANY($1::text[])
+               ORDER BY country_code, fact_key`,
+              [countryCodes],
+            )
+          : await pool.query(
+              `SELECT country_code, title, content, source_url
+               FROM kb_country_facts
+               ORDER BY verified_at DESC
+               LIMIT 12`,
+            )
+
+      const tollRes =
+        countryCodes.length > 0
+          ? await pool.query(
+              `SELECT country_code, title, description, kind, purchase_url, source_url
+               FROM kb_toll_offers
+               WHERE country_code = ANY($1::text[])
+                 AND (vehicle_class = $2 OR vehicle_class = 'other')
+               ORDER BY country_code, title`,
+              [countryCodes, parsed.data.vehicleClass],
+            )
+          : await pool.query(
+              `SELECT country_code, title, description, kind, purchase_url, source_url
+               FROM kb_toll_offers
+               WHERE vehicle_class = $1 OR vehicle_class = 'other'
+               ORDER BY verified_at DESC
+               LIMIT 12`,
+              [parsed.data.vehicleClass],
+            )
+
+      const faqRes = await pool.query(
+        `SELECT question, answer, source_url
+         FROM kb_route_faq
+         WHERE corridor = $1
+         ORDER BY id
+         LIMIT 10`,
+        [parsed.data.corridor],
+      )
+
+      const ai = await answerWithRouteAssistant({
+        question: parsed.data.question,
+        corridor: parsed.data.corridor,
+        vehicleClass: parsed.data.vehicleClass as TollVehicleClass,
+        countries,
+        facts: factsRes.rows.map((r) => ({
+          countryCode: String(r.country_code),
+          title: String(r.title),
+          content: String(r.content),
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+        })),
+        tollOffers: tollRes.rows.map((r) => ({
+          countryCode: String(r.country_code),
+          title: String(r.title),
+          description: String(r.description),
+          kind: String(r.kind),
+          purchaseUrl: String(r.purchase_url),
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+        })),
+        faq: faqRes.rows.map((r) => ({
+          question: String(r.question),
+          answer: String(r.answer),
+          sourceUrl: r.source_url ? String(r.source_url) : null,
+        })),
+      })
+
+      return {
+        answer: ai.answer,
+        citations: ai.citations,
+        usedModel: ai.usedModel,
+        countries,
+        disclaimer:
+          'KI-Hinweise dienen der Orientierung. Rechtliches, Preise und Verfügbarkeit immer bei offiziellen Stellen prüfen.',
+      }
+    } catch (err) {
+      request.log.warn({ err }, 'assistant ask failed')
+      return reply.status(503).send({ error: 'Assistent aktuell nicht verfügbar.' })
+    }
+  })
+
   app.get('/api/borders/:slug', async (request, reply) => {
     const slug = (request.params as { slug: string }).slug
     const r = await pool.query(`SELECT * FROM borders WHERE slug = $1`, [slug])
@@ -588,15 +856,20 @@ function mapUser(row: {
   email: string
   display_name: string
   map_icon?: string | null
+  toll_vehicle_class?: string | null
   stats_km: number
   stats_regions: number
   created_at: Date
 }) {
+  const tvc = row.toll_vehicle_class
+  const tollVehicleClass: TollVehicleClass =
+    tvc === 'motorcycle' || tvc === 'heavy' || tvc === 'other' || tvc === 'car' ? tvc : 'car'
   return {
     id: row.id,
     email: row.email,
     displayName: row.display_name,
     mapIcon: row.map_icon ?? 'person',
+    tollVehicleClass,
     statsKm: row.stats_km,
     statsRegions: row.stats_regions,
     createdAt: row.created_at,

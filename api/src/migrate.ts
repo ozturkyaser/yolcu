@@ -45,6 +45,105 @@ async function ensureRoadAndConvoyExtensions(): Promise<void> {
   `)
 }
 
+async function ensureTollVehicleClassColumn(): Promise<void> {
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS toll_vehicle_class TEXT NOT NULL DEFAULT 'car'`)
+  await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_toll_vehicle_class_check`)
+  await pool.query(`
+    ALTER TABLE users ADD CONSTRAINT users_toll_vehicle_class_check CHECK (
+      toll_vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')
+    )
+  `)
+}
+
+async function ensureKnowledgeBaseTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kb_country_facts (
+      country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+      fact_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source_url TEXT,
+      verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (country_code, fact_key)
+    )
+  `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kb_toll_offers (
+      id TEXT PRIMARY KEY,
+      country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+      vehicle_class TEXT NOT NULL CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')),
+      kind TEXT NOT NULL CHECK (kind IN ('vignette', 'toll', 'info')),
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      purchase_url TEXT NOT NULL,
+      source_url TEXT,
+      verified_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS kb_toll_offers_country_vehicle_idx ON kb_toll_offers (country_code, vehicle_class)`,
+  )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kb_route_faq (
+      id TEXT PRIMARY KEY,
+      corridor TEXT NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      tags TEXT[] NOT NULL DEFAULT '{}'::text[],
+      source_url TEXT,
+      verified_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+}
+
+async function seedBerlinTurkeyKnowledgeBase(): Promise<void> {
+  await pool.query(
+    `INSERT INTO kb_country_facts (country_code, fact_key, title, content, source_url)
+     VALUES
+       ('AT', 'at-vignette', 'Österreich', 'Autobahn/Schnellstraße: digitale Vignette bzw. Streckenmaut prüfen.', 'https://www.asfinag.at/en/toll/vignette/'),
+       ('HU', 'hu-ematrica', 'Ungarn', 'E-Matrica vor Auffahrt prüfen; Kennzeichen und Kategorie korrekt eingeben.', 'https://nemzetiutdij.hu/'),
+       ('RS', 'rs-toll', 'Serbien', 'Auf Hauptkorridoren meist streckenbezogene Mautstationen statt klassischer Jahresvignette.', 'https://www.putevi-srbije.rs/'),
+       ('BG', 'bg-vignette', 'Bulgarien', 'E-Vignette für viele Straßen erforderlich; Fahrzeugklasse korrekt wählen.', 'https://web.bgtoll.bg/'),
+       ('TR', 'tr-hgs', 'Türkiye', 'Maut auf Brücken/Autobahnen über HGS/OGS oder offizielle Zahlungswege.', 'https://www.kgm.gov.tr/')
+     ON CONFLICT (country_code, fact_key) DO UPDATE SET
+       title = EXCLUDED.title,
+       content = EXCLUDED.content,
+       source_url = EXCLUDED.source_url,
+       verified_at = now()`,
+  )
+
+  await pool.query(
+    `INSERT INTO kb_toll_offers (id, country_code, vehicle_class, kind, title, description, purchase_url, source_url)
+     VALUES
+       ('at-car', 'AT', 'car', 'vignette', 'AT Digitale Vignette', 'Pkw/Kleinbus: vor Autobahnfahrt digitale Vignette prüfen.', 'https://www.asfinag.at/en/toll/vignette/', 'https://www.asfinag.at/en/toll/vignette/'),
+       ('at-mc', 'AT', 'motorcycle', 'vignette', 'AT Motorrad-Vignette', 'Motorrad: Kategorie korrekt wählen, Kennzeichen prüfen.', 'https://www.asfinag.at/en/toll/vignette/', 'https://www.asfinag.at/en/toll/vignette/'),
+       ('hu-all', 'HU', 'car', 'vignette', 'HU e-Matrica', 'Ungarn e-Matrica für Pkw.', 'https://nemzetiutdij.hu/', 'https://nemzetiutdij.hu/'),
+       ('hu-mc', 'HU', 'motorcycle', 'vignette', 'HU e-Matrica Motorrad', 'Ungarn e-Matrica für Motorrad.', 'https://nemzetiutdij.hu/', 'https://nemzetiutdij.hu/'),
+       ('bg-all', 'BG', 'car', 'vignette', 'BG e-Vignette', 'Bulgarien e-Vignette für Pkw.', 'https://web.bgtoll.bg/', 'https://web.bgtoll.bg/'),
+       ('tr-hgs-all', 'TR', 'car', 'toll', 'TR HGS', 'Türkiye Mautzahlung über HGS/OGS.', 'https://www.kgm.gov.tr/', 'https://www.kgm.gov.tr/')
+     ON CONFLICT (id) DO UPDATE SET
+       title = EXCLUDED.title,
+       description = EXCLUDED.description,
+       purchase_url = EXCLUDED.purchase_url,
+       source_url = EXCLUDED.source_url,
+       verified_at = now()`,
+  )
+
+  await pool.query(
+    `INSERT INTO kb_route_faq (id, corridor, question, answer, tags, source_url)
+     VALUES
+       ('berlin-tr-01', 'berlin_turkey', 'Welche Unterlagen sollte ich immer dabeihaben?', 'Reisepass/Ausweis, Fahrzeugschein, Führerschein, Versicherung/Grüne Karte, ggf. Vollmacht bei fremdem Fahrzeug.', ARRAY['documents','border'], 'https://europa.eu/youreurope/citizens/travel/index_de.htm'),
+       ('berlin-tr-02', 'berlin_turkey', 'Wann ist an Grenzen am meisten los?', 'Typisch: Ferienbeginn/ende, Wochenenden, Feiertage und Abendspitzen. Wenn möglich früh morgens oder nachts queren.', ARRAY['border','timing'], null),
+       ('berlin-tr-03', 'berlin_turkey', 'Soll ich Vignette vorher kaufen?', 'Ja, am besten vor der Einfahrt in mautpflichtige Strecken digital kaufen und Kennzeichen doppelt prüfen.', ARRAY['vignette','payment'], null)
+     ON CONFLICT (id) DO UPDATE SET
+       question = EXCLUDED.question,
+       answer = EXCLUDED.answer,
+       tags = EXCLUDED.tags,
+       source_url = EXCLUDED.source_url,
+       verified_at = now()`,
+  )
+}
+
 async function ensureVoiceMessageColumns(): Promise<void> {
   await pool.query(`ALTER TABLE group_messages ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'text'`)
   await pool.query(`ALTER TABLE group_messages ADD COLUMN IF NOT EXISTS voice_mime TEXT`)
@@ -84,7 +183,10 @@ export async function runMigrations(): Promise<void> {
   await pool.query(sql)
   await ensureVoiceMessageColumns()
   await ensureMapIconColumn()
+  await ensureTollVehicleClassColumn()
+  await ensureKnowledgeBaseTables()
   await ensureRoadAndConvoyExtensions()
+  await seedBerlinTurkeyKnowledgeBase()
 
   await pool.query(
     `INSERT INTO borders (slug, title, country_a, country_b, wait_minutes, active_users_reporting, hero_image_url, rules_json)

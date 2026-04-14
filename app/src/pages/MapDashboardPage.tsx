@@ -13,13 +13,19 @@ import {
 } from '../components/MapLibreMap'
 import {
   clearMyPresence,
+  askRouteAssistant,
   fetchDrivingRoute,
+  fetchRouteBriefing,
+  fetchRouteTollAdvice,
   fetchGeocodeSearch,
   fetchGroups,
   fetchPoisNear,
   fetchPresenceNearby,
   postMyPresence,
   type DrivingRouteStepDto,
+  type AssistantAskDto,
+  type RouteBriefingDto,
+  type RouteTollAdviceDto,
   type GeocodeResultDto,
   type GroupSummary,
   type MapPoiDto,
@@ -46,6 +52,16 @@ import {
   snapPositionForNavigation,
   totalPolylineLengthM,
 } from '../lib/routeNavigation'
+import {
+  clearNavSession,
+  readNavRecents,
+  readNavSession,
+  saveRecentDestination,
+  writeNavSession,
+  type NavRecentSearch,
+  type NavTarget,
+} from '../lib/navSession'
+import { resolveTollVehicleClass } from '../lib/tollVehicle'
 import { useAuth } from '../context/AuthContext'
 
 const gpsTestMode = isGpsTestModeEnabled()
@@ -67,8 +83,6 @@ const GROUP_PEER_NEARBY_KM = 15
 const NAV_HORGOS: { lat: number; lng: number } = { lat: 45.9172, lng: 19.6718 }
 
 const NAV_HORGOS_LABEL = 'Grenze Horgoš / Röszke (SRB/HU)'
-
-type NavTarget = { lat: number; lng: number; label: string }
 
 function formatRouteDuration(sec: number) {
   const h = Math.floor(sec / 3600)
@@ -136,6 +150,16 @@ export function MapDashboardPage() {
   const [routeSteps, setRouteSteps] = useState<DrivingRouteStepDto[]>([])
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeErr, setRouteErr] = useState<string | null>(null)
+  const [tollAdvice, setTollAdvice] = useState<RouteTollAdviceDto | null>(null)
+  const [tollAdviceLoading, setTollAdviceLoading] = useState(false)
+  const [tollAdviceErr, setTollAdviceErr] = useState<string | null>(null)
+  const [routeBriefing, setRouteBriefing] = useState<RouteBriefingDto | null>(null)
+  const [routeBriefingLoading, setRouteBriefingLoading] = useState(false)
+  const [routeBriefingErr, setRouteBriefingErr] = useState<string | null>(null)
+  const [assistantQuestion, setAssistantQuestion] = useState('')
+  const [assistantAnswer, setAssistantAnswer] = useState<AssistantAskDto | null>(null)
+  const [assistantLoading, setAssistantLoading] = useState(false)
+  const [assistantErr, setAssistantErr] = useState<string | null>(null)
   /** Ziel der Route – erst nach Suche/Karte/POI gesetzt (kein willkürlicher Standardpunkt). */
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null)
   /** Karte antippen: Start oder Ziel setzen (wechselseitig ausschließlich). */
@@ -154,6 +178,7 @@ export function MapDashboardPage() {
   const [destSearchResults, setDestSearchResults] = useState<GeocodeResultDto[]>([])
   const [destSearchLoading, setDestSearchLoading] = useState(false)
   const [destSearchErr, setDestSearchErr] = useState<string | null>(null)
+  const [recentDestinations, setRecentDestinations] = useState<NavRecentSearch[]>([])
   const [testGpsPosition, setTestGpsPosition] = useState<{ lat: number; lng: number } | null>(null)
   const [testGpsLatInput, setTestGpsLatInput] = useState('')
   const [testGpsLngInput, setTestGpsLngInput] = useState('')
@@ -189,6 +214,39 @@ export function MapDashboardPage() {
   const [navAutoRerouteEnabled, setNavAutoRerouteEnabled] = useState(() =>
     readNavPref(LS_NAV_AUTOREROUTE, true),
   )
+
+  useEffect(() => {
+    setRecentDestinations(readNavRecents())
+  }, [])
+
+  useEffect(() => {
+    const session = readNavSession()
+    if (!session) return
+    if (session.target) setNavTarget(session.target)
+    if (session.routeGeometry) setRouteGeometry(session.routeGeometry)
+    if (session.routeMeta) setRouteMeta(session.routeMeta)
+    if (session.routeSteps.length > 0) setRouteSteps(session.routeSteps)
+    if (session.manualRouteStart) setManualRouteStart(session.manualRouteStart)
+    if (session.manualStartLabel) setManualStartLabel(session.manualStartLabel)
+    if (session.panelOpen) setNavPanelOpen(true)
+  }, [])
+
+  useEffect(() => {
+    const hasAny = Boolean(navTarget || routeGeometry?.coordinates?.length || manualRouteStart)
+    if (!hasAny) {
+      clearNavSession()
+      return
+    }
+    writeNavSession({
+      target: navTarget,
+      routeGeometry,
+      routeMeta,
+      routeSteps,
+      manualRouteStart,
+      manualStartLabel,
+      panelOpen: navPanelOpen,
+    })
+  }, [navTarget, routeGeometry, routeMeta, routeSteps, manualRouteStart, manualStartLabel, navPanelOpen])
 
   const setNavTtsEnabledPersist = useCallback((on: boolean) => {
     setNavTtsEnabled(on)
@@ -652,6 +710,8 @@ export function MapDashboardPage() {
   const onPoiMarkerClick = useCallback(
     (poi: MapPoiDto) => {
       const dest = { lat: poi.lat, lng: poi.lng, label: poi.name }
+      saveRecentDestination(dest)
+      setRecentDestinations(readNavRecents())
       applyNavTarget(dest)
       void computeRouteWithDest(dest)
     },
@@ -681,6 +741,8 @@ export function MapDashboardPage() {
   const onRouteToParticipantFromSheet = useCallback(
     (p: ParticipantSheetUser) => {
       const dest = { lat: p.lat, lng: p.lng, label: p.displayName }
+      saveRecentDestination(dest)
+      setRecentDestinations(readNavRecents())
       applyNavTarget(dest)
       setNavPanelOpen(true)
       void computeRouteWithDest(dest)
@@ -763,6 +825,8 @@ export function MapDashboardPage() {
     setDestSearchQuery('')
     setDestSearchResults([])
     const dest = { lat: hit.lat, lng: hit.lng, label: hit.label }
+    saveRecentDestination(dest)
+    setRecentDestinations(readNavRecents())
     applyNavTarget(dest)
     setNavPanelOpen(true)
     void computeRouteWithDest(dest)
@@ -774,6 +838,33 @@ export function MapDashboardPage() {
       return
     }
     void computeRouteWithDest(navTarget, options)
+  }
+
+  async function runAssistantAsk() {
+    const q = assistantQuestion.trim()
+    setAssistantErr(null)
+    if (q.length < 3) {
+      setAssistantErr('Bitte eine konkrete Frage mit mindestens 3 Zeichen eingeben.')
+      return
+    }
+    setAssistantLoading(true)
+    try {
+      const vc = resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon)
+      const resp = await askRouteAssistant(
+        {
+          question: q,
+          vehicleClass: vc,
+          corridor: 'berlin_turkey',
+          geometry: routeGeometry ?? undefined,
+        },
+        { token },
+      )
+      setAssistantAnswer(resp)
+    } catch (e) {
+      setAssistantErr(e instanceof Error ? e.message : 'Assistent konnte nicht antworten.')
+    } finally {
+      setAssistantLoading(false)
+    }
   }
 
   const participantMarkers: MapParticipantMarker[] = useMemo(() => {
@@ -794,6 +885,17 @@ export function MapDashboardPage() {
       }
     })
   }, [participants, mapGroupFilter, myPos, user])
+
+  const tollVehicleResolved = useMemo(
+    () => resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon),
+    [user?.tollVehicleClass, user?.mapIcon],
+  )
+  const tollVehicleLabel = useMemo(() => {
+    if (tollVehicleResolved === 'car') return 'Pkw'
+    if (tollVehicleResolved === 'motorcycle') return 'Motorrad'
+    if (tollVehicleResolved === 'heavy') return 'Schwer / Nutzfahrzeug'
+    return 'Sonstiges'
+  }, [tollVehicleResolved])
 
   const othersCount = user ? participants.filter((p) => p.userId !== user.id).length : participants.length
 
@@ -912,6 +1014,67 @@ export function MapDashboardPage() {
       wakeLockSentinelRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (!routeGeometry?.coordinates?.length) {
+      setTollAdvice(null)
+      setTollAdviceErr(null)
+      setTollAdviceLoading(false)
+      return
+    }
+    const ac = new AbortController()
+    const run = async () => {
+      setTollAdviceLoading(true)
+      setTollAdviceErr(null)
+      try {
+        const vc = resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon)
+        const data = await fetchRouteTollAdvice(routeGeometry, vc, token, { signal: ac.signal })
+        if (!ac.signal.aborted) setTollAdvice(data)
+      } catch (e) {
+        if (!ac.signal.aborted) {
+          setTollAdvice(null)
+          setTollAdviceErr(e instanceof Error ? e.message : 'Vignetten-Infos konnten nicht geladen werden.')
+        }
+      } finally {
+        if (!ac.signal.aborted) setTollAdviceLoading(false)
+      }
+    }
+    void run()
+    return () => ac.abort()
+  }, [routeGeometry, user?.tollVehicleClass, user?.mapIcon, token])
+
+  useEffect(() => {
+    if (!routeGeometry?.coordinates?.length) {
+      setRouteBriefing(null)
+      setRouteBriefingErr(null)
+      setRouteBriefingLoading(false)
+      setAssistantAnswer(null)
+      setAssistantErr(null)
+      return
+    }
+    const ac = new AbortController()
+    const run = async () => {
+      setRouteBriefingLoading(true)
+      setRouteBriefingErr(null)
+      try {
+        const vc = resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon)
+        const data = await fetchRouteBriefing(routeGeometry, vc, token, {
+          signal: ac.signal,
+          corridor: 'berlin_turkey',
+        })
+        if (!ac.signal.aborted) setRouteBriefing(data)
+      } catch (e) {
+        if (!ac.signal.aborted) {
+          setRouteBriefing(null)
+          setRouteBriefingErr(e instanceof Error ? e.message : 'Route-Briefing konnte nicht geladen werden.')
+        }
+      } finally {
+        if (!ac.signal.aborted) setRouteBriefingLoading(false)
+      }
+    }
+    void run()
+    return () => ac.abort()
+  }, [routeGeometry, user?.tollVehicleClass, user?.mapIcon, token])
 
   return (
     <main className="relative h-[calc(100dvh-72px-96px)] w-full overflow-hidden">
@@ -1298,6 +1461,8 @@ export function MapDashboardPage() {
                     type="button"
                     onClick={() => {
                       const dest = { lat: NAV_HORGOS.lat, lng: NAV_HORGOS.lng, label: NAV_HORGOS_LABEL }
+                      saveRecentDestination(dest)
+                      setRecentDestinations(readNavRecents())
                       applyNavTarget(dest)
                       void computeRouteWithDest(dest)
                     }}
@@ -1306,6 +1471,31 @@ export function MapDashboardPage() {
                     Grenze Horgoš
                   </button>
                 </div>
+                {recentDestinations.length > 0 ? (
+                  <div className="mt-3">
+                    <p className="text-[0.65rem] font-bold uppercase text-on-surface-variant">Letzte Ziele</p>
+                    <div className="mt-1 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                      {recentDestinations.map((d, i) => (
+                        <button
+                          key={`${d.lat}-${d.lng}-${i}`}
+                          type="button"
+                          onClick={() => {
+                            const dest = { lat: d.lat, lng: d.lng, label: d.label }
+                            saveRecentDestination(dest)
+                            setRecentDestinations(readNavRecents())
+                            applyNavTarget(dest)
+                            setNavPanelOpen(true)
+                            void computeRouteWithDest(dest)
+                          }}
+                          className="max-w-[11rem] truncate rounded-full border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-left text-[11px] font-semibold"
+                          title={d.label}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 {mapPickTarget ? (
                   <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">
                     {mapPickTarget === 'from'
@@ -1394,6 +1584,183 @@ export function MapDashboardPage() {
                     ))}
                   </ol>
                 ) : null}
+
+                <div className="mt-4 rounded-xl border border-outline-variant/35 bg-surface-container-high/40 p-3">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">
+                    Länder &amp; Vignetten / Maut
+                  </p>
+                  <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                    Fahrzeugklasse aus dem Profil ({tollVehicleLabel}). Unter{' '}
+                    <Link to="/profile" className="font-bold text-primary underline">
+                      Profil
+                    </Link>{' '}
+                    anpassen.
+                  </p>
+                  {tollAdviceLoading ? (
+                    <p className="mt-2 text-xs font-medium text-primary">Ermittle Länder entlang der Route…</p>
+                  ) : null}
+                  {tollAdviceErr ? <p className="mt-2 text-xs font-medium text-error">{tollAdviceErr}</p> : null}
+                  {tollAdvice && tollAdvice.countries.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="text-[0.6rem] font-bold uppercase text-on-surface-variant">Route durch</p>
+                      <p className="mt-1 text-sm font-semibold text-on-surface">
+                        {tollAdvice.countries.map((c) => c.name).join(' → ')}
+                      </p>
+                    </div>
+                  ) : null}
+                  {tollAdvice && tollAdvice.products.length > 0 ? (
+                    <ul className="mt-3 space-y-2">
+                      {tollAdvice.products.map((p) => (
+                        <li
+                          key={p.id}
+                          className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest/90 p-2.5"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-on-surface">{p.title}</p>
+                              <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
+                              <p className="mt-1 text-[10px] uppercase text-on-surface-variant/80">
+                                {p.type === 'vignette' ? 'Vignette' : p.type === 'toll' ? 'Maut' : 'Info'}
+                              </p>
+                            </div>
+                            {p.purchaseUrl ? (
+                              <a
+                                href={p.purchaseUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
+                              >
+                                Kaufen / Info ↗
+                              </a>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {tollAdvice && !tollAdviceLoading && tollAdvice.countries.length === 0 ? (
+                    <p className="mt-2 text-xs text-on-surface-variant">Keine Länder ermittelt (Ortssuche).</p>
+                  ) : null}
+                  {tollAdvice && tollAdvice.countries.length > 0 && tollAdvice.products.length === 0 && !tollAdviceLoading ? (
+                    <p className="mt-2 text-xs text-on-surface-variant">
+                      Für diese Länder sind keine Vignetten-Vorschläge hinterlegt – bitte selbst prüfen.
+                    </p>
+                  ) : null}
+                  {tollAdvice?.disclaimer ? (
+                    <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{tollAdvice.disclaimer}</p>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-outline-variant/35 bg-surface-container-high/40 p-3">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">
+                    KI-Route-Briefing (Berlin → Türkiye)
+                  </p>
+                  <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                    Kompakte Wissensbasis für Fahrer: Länderfakten, Maut-Hinweise und häufige Fragen.
+                  </p>
+                  <div className="mt-2 rounded-lg border border-outline-variant/25 bg-surface-container-lowest/70 p-2">
+                    <label className="mb-1 block text-[11px] font-semibold text-on-surface-variant">
+                      Frage an den Assistenten
+                    </label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={assistantQuestion}
+                        onChange={(e) => setAssistantQuestion(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            void runAssistantAsk()
+                          }
+                        }}
+                        placeholder="z. B. Brauche ich mit Motorrad in Ungarn eine Vignette?"
+                        className="min-w-0 flex-1 rounded-lg border border-outline-variant/40 bg-surface-container-low px-2.5 py-2 text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void runAssistantAsk()}
+                        disabled={assistantLoading}
+                        className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-bold text-on-primary disabled:opacity-50"
+                      >
+                        {assistantLoading ? 'Antwortet…' : 'Fragen'}
+                      </button>
+                    </div>
+                    {assistantErr ? <p className="mt-1 text-xs font-medium text-error">{assistantErr}</p> : null}
+                    {assistantAnswer ? (
+                      <div className="mt-2 rounded-lg bg-surface-container-low px-2.5 py-2">
+                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-on-surface">{assistantAnswer.answer}</p>
+                        {assistantAnswer.citations.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {assistantAnswer.citations.map((c, i) => (
+                              <a
+                                key={`${c}-${i}`}
+                                href={c}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-outline-variant/40 bg-surface-container-high px-2 py-0.5 text-[10px] font-semibold text-primary"
+                              >
+                                Quelle ↗
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  {routeBriefingLoading ? (
+                    <p className="mt-2 text-xs font-medium text-primary">Lade Briefing aus Wissensbasis…</p>
+                  ) : null}
+                  {routeBriefingErr ? (
+                    <p className="mt-2 text-xs font-medium text-error">{routeBriefingErr}</p>
+                  ) : null}
+                  {routeBriefing?.countryFacts?.length ? (
+                    <ul className="mt-2 space-y-1.5">
+                      {routeBriefing.countryFacts.slice(0, 6).map((f) => (
+                        <li key={`${f.countryCode}-${f.key}`} className="rounded-lg bg-surface-container-lowest/70 px-2 py-1.5">
+                          <p className="text-xs font-bold text-on-surface">
+                            {f.countryCode}: {f.title}
+                          </p>
+                          <p className="text-[11px] leading-snug text-on-surface-variant">{f.content}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {routeBriefing?.tollOffers?.length ? (
+                    <div className="mt-3">
+                      <p className="text-[0.6rem] font-bold uppercase text-on-surface-variant">Passende Kauf-Links</p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {routeBriefing.tollOffers.slice(0, 8).map((x) => (
+                          <a
+                            key={x.id}
+                            href={x.purchaseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-full border border-outline-variant/40 bg-surface-container-low px-2 py-1 text-[11px] font-semibold text-primary"
+                            title={x.description}
+                          >
+                            {x.countryCode}: {x.title} ↗
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {routeBriefing?.faq?.length ? (
+                    <div className="mt-3 border-t border-outline-variant/25 pt-2">
+                      <p className="text-[0.6rem] font-bold uppercase text-on-surface-variant">Häufige Fragen</p>
+                      <ul className="mt-1 space-y-1.5">
+                        {routeBriefing.faq.slice(0, 4).map((q) => (
+                          <li key={q.id} className="rounded-lg bg-surface-container-lowest/70 px-2 py-1.5">
+                            <p className="text-xs font-bold text-on-surface">{q.question}</p>
+                            <p className="text-[11px] leading-snug text-on-surface-variant">{q.answer}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {routeBriefing?.disclaimer ? (
+                    <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{routeBriefing.disclaimer}</p>
+                  ) : null}
+                </div>
 
                 {gpsTestMode ? (
                   <div className="mt-4 rounded-xl border border-amber-600/40 bg-amber-500/10 p-3 dark:border-amber-400/40 dark:bg-amber-400/10">

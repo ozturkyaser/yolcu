@@ -166,3 +166,39 @@ CREATE TABLE IF NOT EXISTS map_live_positions (
 );
 
 CREATE INDEX IF NOT EXISTS map_live_positions_updated_idx ON map_live_positions (updated_at DESC);
+
+-- Knowledge Base: Länderhinweise, Maut/Vignette, FAQ (Route-Briefing)
+CREATE TABLE IF NOT EXISTS kb_country_facts (
+  country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+  fact_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source_url TEXT,
+  verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (country_code, fact_key)
+);
+
+CREATE TABLE IF NOT EXISTS kb_toll_offers (
+  id TEXT PRIMARY KEY,
+  country_code TEXT NOT NULL CHECK (char_length(country_code) = 2),
+  vehicle_class TEXT NOT NULL CHECK (vehicle_class IN ('car', 'motorcycle', 'heavy', 'other')),
+  kind TEXT NOT NULL CHECK (kind IN ('vignette', 'toll', 'info')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  purchase_url TEXT NOT NULL,
+  source_url TEXT,
+  verified_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS kb_toll_offers_country_vehicle_idx
+  ON kb_toll_offers (country_code, vehicle_class);
+
+CREATE TABLE IF NOT EXISTS kb_route_faq (
+  id TEXT PRIMARY KEY,
+  corridor TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  tags TEXT[] NOT NULL DEFAULT '{}'::text[],
+  source_url TEXT,
+  verified_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

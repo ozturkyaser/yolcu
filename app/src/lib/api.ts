@@ -55,12 +55,16 @@ export async function apiFetch<T>(
   return res.json() as Promise<T>
 }
 
+export type TollVehicleClass = 'car' | 'motorcycle' | 'heavy' | 'other'
+
 export type User = {
   id: string
   email: string
   displayName: string
   /** Material-Symbol-Name für die Karte */
   mapIcon: string
+  /** Für Vignetten-/Maut-Hinweise entlang der Route */
+  tollVehicleClass: TollVehicleClass
   statsKm: number
   statsRegions: number
   createdAt: string
@@ -393,4 +397,120 @@ export async function fetchDrivingRoute(
     toLng: String(toLng),
   })
   return apiFetch<DrivingRouteDto>(`/route/driving?${q}`)
+}
+
+export type RouteTollAdviceCountryDto = {
+  code: string
+  name: string
+}
+
+export type RouteTollAdviceProductDto = {
+  id: string
+  countryCode: string
+  title: string
+  description: string
+  type: 'vignette' | 'toll' | 'info'
+  vehicleClasses: TollVehicleClass[]
+  purchaseUrl: string
+}
+
+export type RouteTollAdviceDto = {
+  vehicleClass: TollVehicleClass
+  countries: RouteTollAdviceCountryDto[]
+  products: RouteTollAdviceProductDto[]
+  disclaimer: string
+}
+
+/** Länder entlang der Route + Vignetten-/Maut-Hinweise (Nominatim Reverse, dauert einige Sekunden). */
+export async function fetchRouteTollAdvice(
+  geometry: DrivingRouteDto['geometry'],
+  vehicleClass: TollVehicleClass,
+  token?: string | null,
+  opts?: { signal?: AbortSignal },
+) {
+  return apiFetch<RouteTollAdviceDto>('/route/toll-advice', {
+    method: 'POST',
+    token: token ?? undefined,
+    body: JSON.stringify({ geometry, vehicleClass }),
+    signal: opts?.signal,
+  })
+}
+
+export type RouteBriefingCountryFactDto = {
+  countryCode: string
+  key: string
+  title: string
+  content: string
+  sourceUrl: string | null
+  verifiedAt: string
+}
+
+export type RouteBriefingTollOfferDto = {
+  id: string
+  countryCode: string
+  vehicleClass: string
+  kind: string
+  title: string
+  description: string
+  purchaseUrl: string
+  sourceUrl: string | null
+  verifiedAt: string
+}
+
+export type RouteBriefingFaqDto = {
+  id: string
+  question: string
+  answer: string
+  tags: string[]
+  sourceUrl: string | null
+  verifiedAt: string
+}
+
+export type RouteBriefingDto = {
+  corridor: string
+  vehicleClass: TollVehicleClass
+  countries: RouteTollAdviceCountryDto[]
+  countryFacts: RouteBriefingCountryFactDto[]
+  tollOffers: RouteBriefingTollOfferDto[]
+  faq: RouteBriefingFaqDto[]
+  disclaimer: string
+}
+
+export async function fetchRouteBriefing(
+  geometry: DrivingRouteDto['geometry'],
+  vehicleClass: TollVehicleClass,
+  token?: string | null,
+  opts?: { signal?: AbortSignal; corridor?: string },
+) {
+  return apiFetch<RouteBriefingDto>('/route/briefing', {
+    method: 'POST',
+    token: token ?? undefined,
+    body: JSON.stringify({ geometry, vehicleClass, corridor: opts?.corridor ?? 'berlin_turkey' }),
+    signal: opts?.signal,
+  })
+}
+
+export type AssistantAskDto = {
+  answer: string
+  citations: string[]
+  usedModel: string
+  countries: RouteTollAdviceCountryDto[]
+  disclaimer: string
+}
+
+export async function askRouteAssistant(
+  body: {
+    question: string
+    vehicleClass: TollVehicleClass
+    corridor?: string
+    geometry?: DrivingRouteDto['geometry']
+  },
+  opts?: { signal?: AbortSignal; token?: string | null },
+) {
+  return apiFetch<AssistantAskDto>('/assistant/ask', {
+    method: 'POST',
+    token: opts?.token ?? undefined,
+    body: JSON.stringify(body),
+    signal: opts?.signal,
+  })
 }

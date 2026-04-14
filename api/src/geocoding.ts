@@ -53,6 +53,34 @@ export async function searchNominatim(query: string, userAgent: string): Promise
   return out
 }
 
+/** ISO-3166-1 alpha-2, z. B. `DE` – für Routen-Länder (Nominatim Reverse, 1 RPS beachten). */
+export async function reverseNominatimCountryCode(
+  lat: number,
+  lng: number,
+  userAgent: string,
+): Promise<string | null> {
+  const url = new URL('https://nominatim.openstreetmap.org/reverse')
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('lat', String(lat))
+  url.searchParams.set('lon', String(lng))
+  url.searchParams.set('zoom', '3')
+  url.searchParams.set('addressdetails', '1')
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      'User-Agent': userAgent,
+      Accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(18_000),
+  })
+
+  if (!res.ok) return null
+  const data = (await res.json()) as { address?: { country_code?: string } }
+  const raw = data.address?.country_code
+  if (typeof raw !== 'string' || raw.length < 2) return null
+  return raw.toUpperCase().slice(0, 2)
+}
+
 const geocodeQuerySchema = z.object({ q: z.string().max(220) })
 
 async function geocodeSearchHandler(request: FastifyRequest, reply: FastifyReply) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { apiFetch, type VehicleDto } from '../lib/api'
+import { apiFetch, type TollVehicleClass, type VehicleDto } from '../lib/api'
 import { MAP_MAP_ICON_OPTIONS, normalizeMapIconId, type MapMapIconId } from '../lib/mapIcons'
 import { useAuth } from '../context/AuthContext'
 
@@ -9,6 +9,7 @@ export function ProfilePage() {
   const [vehicles, setVehicles] = useState<VehicleDto[]>([])
   const [displayName, setDisplayName] = useState('')
   const [mapIcon, setMapIcon] = useState<MapMapIconId>('person')
+  const [tollVehicleClass, setTollVehicleClass] = useState<TollVehicleClass>('car')
   const [vLabel, setVLabel] = useState('')
   const [vPlate, setVPlate] = useState('')
   const [vTrailer, setVTrailer] = useState(false)
@@ -27,6 +28,7 @@ export function ProfilePage() {
         if (data.user) {
           setDisplayName(data.user.displayName)
           setMapIcon(normalizeMapIconId(data.user.mapIcon))
+          setTollVehicleClass(data.user.tollVehicleClass ?? 'car')
         }
         setVehicles(data.vehicles)
         const primary = data.vehicles.find((x) => x.is_primary) ?? data.vehicles[0]
@@ -72,7 +74,7 @@ export function ProfilePage() {
       await apiFetch('/profile', {
         method: 'PUT',
         token,
-        body: JSON.stringify({ displayName: nameForApi, mapIcon }),
+        body: JSON.stringify({ displayName: nameForApi, mapIcon, tollVehicleClass }),
       })
       const vid = vehicles.find((x) => x.is_primary)?.id ?? vehicles[0]?.id
       if (vid) {
@@ -174,6 +176,22 @@ export function ProfilePage() {
             </button>
           ))}
         </div>
+        <label className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">
+          Fahrzeugklasse (Vignette / Maut)
+        </label>
+        <p className="mb-2 text-xs text-on-surface-variant">
+          Wird für Hinweise entlang deiner Route verwendet (z. B. Pkw vs. Motorrad vs. Nutzfahrzeug).
+        </p>
+        <select
+          value={tollVehicleClass}
+          onChange={(e) => setTollVehicleClass(e.target.value as TollVehicleClass)}
+          className="mb-6 w-full max-w-md rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm font-semibold"
+        >
+          <option value="car">Pkw / Kleinbus</option>
+          <option value="motorcycle">Motorrad</option>
+          <option value="heavy">Lkw / schweres Nutzfahrzeug</option>
+          <option value="other">Sonstiges</option>
+        </select>
         <button
           type="button"
           disabled={saving}
@@ -222,21 +240,22 @@ export function ProfilePage() {
 
       <section>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">VİNYET KONTROL LİSTESİ</h3>
+          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">Vignetten &amp; Maut</h3>
           <Link to="/legal/privacy" className="text-xs font-bold text-primary">
             Datenschutz
           </Link>
         </div>
-        <div className="overflow-hidden rounded-xl bg-surface-container-low">
-          {['Austria', 'Hungary', 'Slovenia', 'Bulgaria', 'Türkiye'].map((c, i) => (
-            <div
-              key={c}
-              className={`flex items-center justify-between px-6 py-5 ${i > 0 ? 'border-t border-outline-variant/10' : ''} ${i === 0 ? 'bg-white shadow-sm' : ''}`}
-            >
-              <span className="font-sans text-lg font-semibold">{c}</span>
-              <span className="font-sans text-xs font-bold text-primary">Prüfen / kaufen ↗</span>
-            </div>
-          ))}
+        <div className="rounded-xl bg-surface-container-low px-6 py-5 text-sm leading-relaxed text-on-surface-variant">
+          <p>
+            Nach einer berechneten Route siehst du auf der{' '}
+            <Link to="/" className="font-bold text-primary underline">
+              Karte
+            </Link>{' '}
+            automatisch die durchfahrenen Länder und passende offizielle Kauf-/Info-Links (Vignette, Maut).
+          </p>
+          <p className="mt-2 text-xs">
+            Es werden keine Zahlungen in der App abgewickelt – du wirst zu den jeweiligen Anbietern weitergeleitet.
+          </p>
         </div>
       </section>
     </main>
