@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  /** Relativ für Capacitor / file:-WebView (Asset-Pfade). */
+  base: './',
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {

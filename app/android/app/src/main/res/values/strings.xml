@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Yol Arkadaşım</string>
+    <string name="title_activity_main">Yol Arkadaşım</string>
+    <string name="package_name">com.ozturkyaser.yolarkadasim</string>
+    <string name="custom_url_scheme">com.ozturkyaser.yolarkadasim</string>
+</resources>

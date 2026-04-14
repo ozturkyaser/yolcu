@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { WelcomeOnboarding } from './components/WelcomeOnboarding'
 import { I18nProvider } from './i18n/I18nContext'
 import { ShellLayout } from './components/ShellLayout'
 import { MapDashboardPage } from './pages/MapDashboardPage'
@@ -15,6 +16,7 @@ export default function App() {
   return (
     <I18nProvider>
     <BrowserRouter>
+      <WelcomeOnboarding />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

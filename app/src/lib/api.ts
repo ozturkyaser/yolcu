@@ -1,5 +1,14 @@
-/** Relativer Pfad: Vite-Proxy → API (dev) oder gleicher Host (prod mit Reverse-Proxy). */
-const prefix = '/api'
+/**
+ * Relativer Pfad `/api` (Dev-Proxy, Web hinter Reverse-Proxy) oder absolute Basis
+ * wenn `VITE_API_BASE_URL` gesetzt (z. B. Android-APK / Capacitor).
+ */
+function apiBasePrefix(): string {
+  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+    return `${raw.trim().replace(/\/$/, '')}/api`
+  }
+  return '/api'
+}
 
 const GENERIC_SERVER_ERR = 'Internal Server Error'
 
@@ -43,7 +52,7 @@ export async function apiFetch<T>(
   }
   /* FormData: kein Content-Type setzen (Multipart-Boundary) */
 
-  const res = await fetch(`${prefix}${path}`, { ...rest, headers })
+  const res = await fetch(`${apiBasePrefix()}${path}`, { ...rest, headers })
   if (!res.ok) {
     const msg = await parseError(res)
     if (import.meta.env.DEV) {
@@ -164,8 +173,14 @@ export type MapParticipantDto = {
   updatedAt: string
 }
 
-/** WebSocket-URL (Vite-Proxy oder gleicher Host in Produktion). */
+/** WebSocket-URL (Vite-Proxy, gleicher Host in Web-Prod, oder `VITE_API_BASE_URL`). */
 export function websocketUrl(token: string): string {
+  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+    const u = new URL(raw.trim())
+    const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProto}//${u.host}/api/ws?token=${encodeURIComponent(token)}`
+  }
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/api/ws?token=${encodeURIComponent(token)}`
 }

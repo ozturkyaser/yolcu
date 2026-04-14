@@ -50,3 +50,28 @@ docker compose -f docker-compose.prod.yml up -d --build
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — `app` (lint+build) und `api` (Typecheck).
+
+## Android-APK (Capacitor)
+
+Die Web-UI liegt unter [`app/`](app/) mit [Capacitor](https://capacitorjs.com/). Die fertige App lädt die gebaute `dist/`-UI in einer nativen WebView; **API und WebSockets** brauchen eine erreichbare HTTPS-URL (nicht `localhost` vom Handy aus).
+
+1. **API-Basis setzen** (ohne trailing slash), z. B. Datei `app/.env.production`:
+
+   ```bash
+   VITE_API_BASE_URL=https://deine-domain.de
+   ```
+
+2. **Web bauen und nach Android kopieren**, dann **APK** (JDK 17+ und Android SDK bzw. Android Studio):
+
+   ```bash
+   cd app
+   npm install
+   npm run cap:sync
+   cd android && ./gradlew assembleDebug
+   ```
+
+   Debug-APK: `app/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+   Alternativ: `npm run android:open` und in Android Studio **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+
+3. **Release-APK** (Signierung, Play Store): in Android Studio ein Signing-Config anlegen und `assembleRelease` ausführen; siehe [Capacitor Android deploy](https://capacitorjs.com/docs/android/deploying-to-google-play).
