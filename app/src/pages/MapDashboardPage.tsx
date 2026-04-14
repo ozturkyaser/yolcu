@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import maplibregl from 'maplibre-gl'
 import { Link, useNavigate } from 'react-router-dom'
 import { CreatePoiModal } from '../components/CreatePoiModal'
@@ -1052,13 +1053,36 @@ export function MapDashboardPage() {
   }, [routeGeometry, tollAdvice])
 
   const openVignetteServiceModal = useCallback(
-    async (opts?: { advice?: RouteTollAdviceDto | null; routeLabel?: string | null }) => {
+    async (opts?: {
+      advice?: RouteTollAdviceDto | null
+      routeLabel?: string | null
+      /** Nur Auto-Open: Ref erst nach erfolgreichem Öffnen, sonst bleibt der Dialog blockiert. */
+      autoMarkKey?: string | null
+    }) => {
       if (!token) {
         navigate('/login')
         return
       }
-      const adv = opts?.advice ?? tollAdvice
-      if (!adv?.countries?.length) return
+      const vc = resolveTollVehicleClass(user?.tollVehicleClass, user?.mapIcon)
+      let adv: RouteTollAdviceDto | null = opts?.advice ?? tollAdvice ?? null
+
+      if (!adv) {
+        if (!routeGeometry?.coordinates?.length || tollAdviceLoading) return
+        adv = {
+          vehicleClass: vc,
+          countries: [],
+          products: [],
+          disclaimer:
+            tollAdviceErr ||
+            'Maut-/Länderinfos konnten nicht geladen werden. Bitte Verbindung/API prüfen und die Seite neu laden.',
+        }
+      } else if (!adv.countries.length) {
+        if (tollAdviceLoading) return
+        if (!routeGeometry?.coordinates?.length) return
+      }
+
+      if (opts?.autoMarkKey) vignetteAutoOpenedRouteKeyRef.current = opts.autoMarkKey
+
       setVignetteAdviceForModal(adv)
       setVignetteRouteLabelForModal(
         opts && 'routeLabel' in opts ? (opts.routeLabel ?? null) : (navTarget?.label ?? null),
@@ -1070,9 +1094,9 @@ export function MapDashboardPage() {
         const { products } = await fetchVignetteServiceProducts()
         setVignetteCatalog(products)
         const codes = new Set(adv.countries.map((c) => c.code))
-        const vc = adv.vehicleClass
+        const vehicleClass = adv.vehicleClass
         const el = products.filter(
-          (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
+          (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vehicleClass),
         )
         setVignetteSelected(el.map((p) => p.id))
         if (el.length === 0) {
@@ -1084,7 +1108,17 @@ export function MapDashboardPage() {
         setVignetteBusy(false)
       }
     },
-    [token, navigate, tollAdvice, navTarget?.label],
+    [
+      token,
+      navigate,
+      tollAdvice,
+      tollAdviceLoading,
+      tollAdviceErr,
+      routeGeometry?.coordinates?.length,
+      user?.tollVehicleClass,
+      user?.mapIcon,
+      navTarget?.label,
+    ],
   )
 
   useEffect(() => {
@@ -1098,8 +1132,11 @@ export function MapDashboardPage() {
     if (!tollAdvice?.countries?.length) return
     if (vignetteModalOpen) return
     if (vignetteAutoOpenedRouteKeyRef.current === routeTollSnapshotKey) return
-    vignetteAutoOpenedRouteKeyRef.current = routeTollSnapshotKey
-    void openVignetteServiceModal()
+    void openVignetteServiceModal({
+      advice: tollAdvice,
+      routeLabel: navTarget?.label ?? null,
+      autoMarkKey: routeTollSnapshotKey,
+    })
   }, [
     routeTollSnapshotKey,
     token,
@@ -1108,6 +1145,7 @@ export function MapDashboardPage() {
     tollAdvice,
     vignetteModalOpen,
     openVignetteServiceModal,
+    navTarget?.label,
   ])
 
   async function submitVignetteOrderRequest() {
@@ -2107,7 +2145,7 @@ export function MapDashboardPage() {
                     ) : null}
                     <button
                       type="button"
-                      disabled={tollAdviceLoading || !tollAdvice?.countries?.length}
+                      disabled={tollAdviceLoading}
                       onClick={() => void openVignetteServiceModal()}
                       className="mt-3 w-full rounded-xl bg-secondary py-2.5 text-xs font-black text-on-secondary disabled:opacity-40"
                     >
@@ -2588,19 +2626,27 @@ export function MapDashboardPage() {
         </div>
       ) : null}
 
-      {vignetteModalOpen && vignetteAdviceForModal ? (
-        <div
-          className="fixed inset-0 z-[75] flex items-end justify-center bg-black/45 p-4 sm:items-center"
-          role="dialog"
-          aria-modal
-          aria-labelledby="vignette-modal-title"
-        >
+      {typeof document !== 'undefined' && vignetteModalOpen && vignetteAdviceForModal
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+              role="dialog"
+              aria-modal
+              aria-labelledby="vignette-modal-title"
+            >
           <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 shadow-2xl">
             <h2 id="vignette-modal-title" className="text-lg font-black text-on-surface">
               Vignetten-Service
             </h2>
             <p className="mt-1 text-xs text-on-surface-variant">
-              Route: {vignetteAdviceForModal.countries.map((c) => c.name).join(' → ')} · Fahrzeug: {tollVehicleLabel}
+              Route:{' '}
+              {vignetteAdviceForModal.countries.length > 0
+                ? vignetteAdviceForModal.countries.map((c) => c.name).join(' → ')
+                : vignetteRouteLabelForModal
+                  ? `Ziel: ${vignetteRouteLabelForModal}`
+                  : 'Strecke aktiv (Länder noch nicht ermittelt)'}
+              {' · '}
+              Fahrzeug: {tollVehicleLabel}
             </p>
 
             <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
@@ -2792,8 +2838,10 @@ export function MapDashboardPage() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </main>
   )
 }
