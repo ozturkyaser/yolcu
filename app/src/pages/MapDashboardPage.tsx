@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import maplibregl from 'maplibre-gl'
 import { Link, useNavigate } from 'react-router-dom'
 import { CreatePoiModal } from '../components/CreatePoiModal'
@@ -79,6 +79,9 @@ const NAV_SNAP_MAX_M = 88
 /** Abstand für „in Gruppen-Nähe“ auf der Karte / Nah-Funk-Hinweis (km) */
 const GROUP_PEER_NEARBY_KM = 15
 
+/** Fallback bis `BottomNav` `--bottom-nav-height` setzt (≈ ShellLayout `h-24`). */
+const BOTTOM_NAV_CSS = 'var(--bottom-nav-height, 6rem)'
+
 /** Straßennaher Punkt Grenzübergang Horgoš/Röszke (SRB/HU) für OSRM-Routing */
 const NAV_HORGOS: { lat: number; lng: number } = { lat: 45.9172, lng: 19.6718 }
 
@@ -158,6 +161,10 @@ export function MapDashboardPage() {
   const [routeBriefingErr, setRouteBriefingErr] = useState<string | null>(null)
   /** Kompakte HUD-Leiste statt großem Navigationspanel (Display frei halten). */
   const [navHudExpanded, setNavHudExpanded] = useState(false)
+  /** Linkes „Gemeinsam auf der Karte“: nur Icon bis zur Ausklapp-Ansicht. */
+  const [mapLeftInfoExpanded, setMapLeftInfoExpanded] = useState(false)
+  /** Rechte Karten-Aktionen: kompakte Icons vs. größere Darstellung inkl. SOS-Text. */
+  const [mapRightFabExpanded, setMapRightFabExpanded] = useState(false)
   const [assistantQuestion, setAssistantQuestion] = useState('')
   const [assistantAnswer, setAssistantAnswer] = useState<AssistantAskDto | null>(null)
   const [assistantLoading, setAssistantLoading] = useState(false)
@@ -1079,6 +1086,22 @@ export function MapDashboardPage() {
     return () => ac.abort()
   }, [routeGeometry, user?.tollVehicleClass, user?.mapIcon, token])
 
+  /** Unterkante bündig mit der Oberkante der festen Bottom-Navigation (`--bottom-nav-height`). */
+  const navHudBottomStyle = useMemo((): CSSProperties => ({ bottom: BOTTOM_NAV_CSS }), [])
+  /** Rechte FABs + linkes Info-Icon: über Nav-HUD bzw. direkt über der Tab-Leiste. */
+  const mapFabColumnBottomStyle = useMemo((): CSSProperties => {
+    if (routeGeometry?.coordinates?.length) {
+      return {
+        bottom: navHudExpanded
+          ? `calc(${BOTTOM_NAV_CSS} + min(42vh, 17.5rem))`
+          : `calc(${BOTTOM_NAV_CSS} + 3.25rem)`,
+      }
+    }
+    return { bottom: `calc(${BOTTOM_NAV_CSS} + 0.625rem)` }
+  }, [routeGeometry?.coordinates?.length, navHudExpanded])
+
+  const mapLeftSheetBottomStyle = useMemo((): CSSProperties => ({ bottom: `calc(${BOTTOM_NAV_CSS} + 0.75rem)` }), [])
+
   return (
     <main className="relative h-[calc(100dvh-72px-96px)] w-full overflow-hidden">
       <div className="absolute inset-0 z-0 bg-surface-container">
@@ -1110,73 +1133,107 @@ export function MapDashboardPage() {
       ) : null}
 
       {routeGeometry?.coordinates?.length ? (
-        <div className="pointer-events-none absolute bottom-[5.25rem] left-1/2 z-[15] w-[min(100%-1rem,26rem)] max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-[6rem]">
-          <div className="pointer-events-auto rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/98 p-3 shadow-2xl backdrop-blur-md">
-            {navAlongState && navAlongState.distToRouteM >= NAV_OFF_ROUTE_WARN_M ? (
-              <div
-                className={
-                  navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
-                    ? 'mb-3 rounded-xl border border-error/50 bg-error/10 px-3 py-2'
-                    : 'mb-3 rounded-xl border border-amber-600/40 bg-amber-500/10 px-3 py-2 dark:border-amber-400/35'
-                }
-              >
-                <p className="text-xs font-bold text-on-surface">
-                  {navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
-                    ? 'Du bist weit von der Route – bitte neu planen.'
-                    : 'Etwas abseits der Route.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => requestRouteAgain()}
-                  disabled={routeLoading || !navTarget}
-                  className="mt-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-on-primary disabled:opacity-50"
-                >
-                  Route neu berechnen
-                </button>
-              </div>
-            ) : null}
-            {navUserPausedMap && navFollowActive ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-tertiary-container/80 px-3 py-2">
-                <p className="text-xs font-semibold text-on-tertiary-container">Karte manuell verschoben – Führung pausiert.</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    resumeNavigationGuidance()
-                    window.setTimeout(() => runNavigationCameraRef.current('gps'), 120)
-                  }}
-                  className="shrink-0 rounded-lg bg-tertiary px-3 py-1.5 text-xs font-bold text-on-tertiary"
-                >
-                  Zurück zur Führung
-                </button>
-              </div>
-            ) : null}
+        <div
+          className="pointer-events-none absolute left-1/2 z-[15] flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-col items-center"
+          style={navHudBottomStyle}
+        >
+          <div className={navHudExpanded ? 'flex w-[min(100%-1rem,26rem)] flex-col items-stretch' : 'flex flex-col items-center'}>
             {!navHudExpanded ? (
-              <button
-                type="button"
-                onClick={() => setNavHudExpanded(true)}
-                className="flex w-full items-center gap-2 rounded-xl border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-left"
-                aria-label="Navigation erweitern"
-              >
-                <span
-                  className="material-symbols-outlined shrink-0 text-2xl text-primary"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
+              <div className="pointer-events-auto flex flex-col items-center gap-2">
+                {navAlongState && navAlongState.distToRouteM >= NAV_OFF_ROUTE_WARN_M ? (
+                  <button
+                    type="button"
+                    onClick={() => setNavHudExpanded(true)}
+                    className={
+                      navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
+                        ? 'max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-error/50 bg-error/15 px-3 py-2 text-left text-[11px] font-bold text-on-surface shadow-md backdrop-blur-sm'
+                        : 'max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-amber-600/45 bg-amber-500/12 px-3 py-2 text-left text-[11px] font-bold text-on-surface shadow-md backdrop-blur-sm dark:border-amber-400/40'
+                    }
+                  >
+                    {navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
+                      ? 'Weit von der Route – tippen für Optionen.'
+                      : 'Etwas abseits der Route – tippen für Details.'}
+                  </button>
+                ) : null}
+                {navUserPausedMap && navFollowActive ? (
+                  <button
+                    type="button"
+                    onClick={() => setNavHudExpanded(true)}
+                    className="max-w-[min(18rem,calc(100vw-2rem))] rounded-xl bg-tertiary-container/95 px-3 py-2 text-left text-[11px] font-bold text-on-tertiary-container shadow-md backdrop-blur-sm"
+                  >
+                    Führung pausiert – tippen zum Fortsetzen.
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setNavHudExpanded(true)}
+                  title={
+                    navAlongState
+                      ? `${navAlongState.primaryStep?.text ?? 'Navigation'} · noch ca. ${formatRouteDist(navAlongState.remainingM)}`
+                      : 'Navigation anzeigen'
+                  }
+                  aria-label={
+                    navAlongState?.primaryStep?.text
+                      ? `Navigation: ${navAlongState.primaryStep.text}. Öffnen für Details.`
+                      : 'Navigation öffnen'
+                  }
+                  className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-primary/40 bg-surface-container-lowest/98 shadow-2xl ring-2 ring-primary/15 backdrop-blur-md active:scale-95"
                 >
-                  navigation
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-on-surface">
-                    {navAlongState?.primaryStep?.text ?? 'Navigation aktiv'}
-                  </p>
-                  <p className="truncate text-[11px] text-on-surface-variant">
-                    {navAlongState
-                      ? `Noch ${formatRouteDist(navAlongState.remainingM)}${routeMeta ? ` · ${formatRouteDuration(Math.max(60, (navAlongState.remainingM / Math.max(navAlongState.totalM, 1)) * routeMeta.durationS))}` : ''}`
-                      : 'Tippen, um Navigation zu öffnen'}
-                  </p>
-                </div>
-                <span className="material-symbols-outlined shrink-0 text-on-surface-variant">expand_less</span>
-              </button>
+                  <span
+                    className="material-symbols-outlined text-[26px] text-primary"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    navigation
+                  </span>
+                  {navAlongState && navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M ? (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-error shadow ring-2 ring-surface-container-lowest" />
+                  ) : navAlongState && navAlongState.distToRouteM >= NAV_OFF_ROUTE_WARN_M ? (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 shadow ring-2 ring-surface-container-lowest" />
+                  ) : navUserPausedMap && navFollowActive ? (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-tertiary shadow ring-2 ring-surface-container-lowest" />
+                  ) : null}
+                </button>
+              </div>
             ) : (
-              <>
+              <div className="pointer-events-auto w-full rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/98 p-3 shadow-2xl backdrop-blur-md">
+                {navAlongState && navAlongState.distToRouteM >= NAV_OFF_ROUTE_WARN_M ? (
+                  <div
+                    className={
+                      navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
+                        ? 'mb-3 rounded-xl border border-error/50 bg-error/10 px-3 py-2'
+                        : 'mb-3 rounded-xl border border-amber-600/40 bg-amber-500/10 px-3 py-2 dark:border-amber-400/35'
+                    }
+                  >
+                    <p className="text-xs font-bold text-on-surface">
+                      {navAlongState.distToRouteM >= NAV_OFF_ROUTE_SEVERE_M
+                        ? 'Du bist weit von der Route – bitte neu planen.'
+                        : 'Etwas abseits der Route.'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => requestRouteAgain()}
+                      disabled={routeLoading || !navTarget}
+                      className="mt-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-on-primary disabled:opacity-50"
+                    >
+                      Route neu berechnen
+                    </button>
+                  </div>
+                ) : null}
+                {navUserPausedMap && navFollowActive ? (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-tertiary-container/80 px-3 py-2">
+                    <p className="text-xs font-semibold text-on-tertiary-container">Karte manuell verschoben – Führung pausiert.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resumeNavigationGuidance()
+                        window.setTimeout(() => runNavigationCameraRef.current('gps'), 120)
+                      }}
+                      className="shrink-0 rounded-lg bg-tertiary px-3 py-1.5 text-xs font-bold text-on-tertiary"
+                    >
+                      Zurück zur Führung
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex items-start gap-2">
                   <span className="material-symbols-outlined mt-0.5 shrink-0 text-3xl text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
                     navigation
@@ -1295,7 +1352,7 @@ export function MapDashboardPage() {
                     Routen-Optionen
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -1883,105 +1940,181 @@ export function MapDashboardPage() {
       </div>
 
       <div className="pointer-events-none absolute inset-0 p-4 sm:p-6">
-        <div className="pointer-events-auto absolute right-4 bottom-10 flex flex-col items-end gap-3 sm:right-6">
+        {mapLeftInfoExpanded ? (
           <button
             type="button"
-            onClick={() => goToMyLocation()}
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-on-primary shadow-xl ring-4 ring-primary/25 active:scale-95"
-            aria-label="Karte auf meinen Standort zentrieren"
-            title="Meine Position"
-          >
-            <span className="material-symbols-outlined text-3xl">my_location</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void loadPois(center.lat, center.lng)
-              void loadParticipants(center.lat, center.lng)
-            }}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95"
-            aria-label="Karte aktualisieren"
-          >
-            <span className="material-symbols-outlined text-xl">refresh</span>
-          </button>
-          <button
-            type="button"
-            onClick={openAddPoi}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95"
-            aria-label="Ort eintragen"
-          >
-            <span className="material-symbols-outlined text-xl">add_location_alt</span>
-          </button>
-          <Link
-            to="/community"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95"
-            aria-label="Community"
-          >
-            <span className="material-symbols-outlined text-xl">forum</span>
-          </Link>
-          <button
-            type="button"
-            onClick={() => setHelpOpen(true)}
-            className="flex h-14 items-center gap-2 rounded-full bg-gradient-to-br from-error to-error-dark px-6 text-on-error shadow-lg active:scale-90"
-          >
-            <span className="material-symbols-outlined fill text-xl">sos</span>
-            <span className="font-sans text-sm font-black tracking-widest">YARDIM</span>
-          </button>
-        </div>
+            aria-label="Infobereich schließen"
+            className="pointer-events-auto fixed inset-0 z-[18] bg-black/25 backdrop-blur-[1px]"
+            onClick={() => setMapLeftInfoExpanded(false)}
+          />
+        ) : null}
 
-        <div className="pointer-events-auto absolute bottom-10 left-4 max-w-[min(15rem,calc(100%-5rem))] rounded-2xl bg-inverse-surface/95 px-2.5 py-2 text-inverse-on-surface shadow-lg backdrop-blur-sm sm:left-6">
-          <p className="font-sans text-[0.55rem] font-bold uppercase tracking-[0.08em] text-surface-dim">
-            Gemeinsam auf der Karte
-          </p>
-          <p className="mt-0.5 font-sans text-sm font-bold tabular-nums leading-tight">
-            {participants.length} unterwegs
-            {user && othersCount > 0 ? (
-              <span className="font-medium text-surface-dim"> · {othersCount} andere</span>
-            ) : null}
-          </p>
-          {user && myGroups.length > 0 ? (
-            <label className="mt-2 block border-t border-surface-variant/25 pt-2">
-              <span className="mb-0.5 block text-[0.55rem] font-bold uppercase tracking-wide text-surface-dim">
-                Wer angezeigt wird
-              </span>
-              <select
-                value={mapGroupFilter}
-                onChange={(e) => setMapGroupFilter(e.target.value === 'all' ? 'all' : e.target.value)}
-                className="w-full rounded-lg border border-surface-variant/35 bg-surface-container-lowest px-2 py-1 text-[11px] font-semibold text-inverse-on-surface"
+        {mapLeftInfoExpanded ? (
+          <div
+            className="pointer-events-auto fixed z-[19] w-[min(17rem,calc(100vw-2rem))] max-h-[min(58vh,calc(100dvh-11rem))] overflow-y-auto rounded-2xl border border-outline-variant/30 bg-inverse-surface/98 p-3 text-inverse-on-surface shadow-2xl backdrop-blur-md sm:left-6"
+            style={{ ...mapLeftSheetBottomStyle, left: 'max(1rem, env(safe-area-inset-left))' }}
+          >
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <p className="font-sans text-[0.55rem] font-bold uppercase tracking-[0.08em] text-surface-dim">Gemeinsam auf der Karte</p>
+              <button
+                type="button"
+                onClick={() => setMapLeftInfoExpanded(false)}
+                className="rounded-lg border border-surface-variant/40 px-2 py-0.5 text-[10px] font-bold text-surface-dim hover:bg-surface-variant/15"
               >
-                <option value="all">Alle in der Nähe</option>
-                {myGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    Nur: {g.name}
-                  </option>
-                ))}
-              </select>
-              {mapGroupFilter !== 'all' && myPos ? (
-                <p className="mt-1 text-[9px] leading-tight text-surface-dim">
-                  Grüner Ring: Gruppe in ca. {GROUP_PEER_NEARBY_KM} km – für Nah-Funk im Chat.
-                </p>
+                Schließen
+              </button>
+            </div>
+            <p className="font-sans text-sm font-bold tabular-nums leading-tight">
+              {participants.length} unterwegs
+              {user && othersCount > 0 ? (
+                <span className="font-medium text-surface-dim"> · {othersCount} andere</span>
               ) : null}
-            </label>
-          ) : null}
-          {user ? (
-            <label className="mt-2 flex cursor-pointer items-start gap-1.5 border-t border-surface-variant/25 pt-2 text-[11px] font-medium leading-snug">
-              <input
-                type="checkbox"
-                checked={shareOnMap}
-                onChange={(e) => void onToggleShare(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-surface-variant accent-primary"
-              />
-              <span>Position teilen</span>
-            </label>
-          ) : (
-            <p className="mt-2 border-t border-surface-variant/25 pt-2 text-[10px] leading-snug text-surface-dim">
-              <Link to="/login" className="font-bold text-primary-fixed-dim underline">
-                Anmelden
-              </Link>{' '}
-              zum Mitfahren.
             </p>
-          )}
-          {geoHint ? <p className="mt-1.5 text-[10px] font-medium leading-snug text-amber-200">{geoHint}</p> : null}
+            {user && myGroups.length > 0 ? (
+              <label className="mt-2 block border-t border-surface-variant/25 pt-2">
+                <span className="mb-0.5 block text-[0.55rem] font-bold uppercase tracking-wide text-surface-dim">
+                  Wer angezeigt wird
+                </span>
+                <select
+                  value={mapGroupFilter}
+                  onChange={(e) => setMapGroupFilter(e.target.value === 'all' ? 'all' : e.target.value)}
+                  className="w-full rounded-lg border border-surface-variant/35 bg-surface-container-lowest px-2 py-1 text-[11px] font-semibold text-inverse-on-surface"
+                >
+                  <option value="all">Alle in der Nähe</option>
+                  {myGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      Nur: {g.name}
+                    </option>
+                  ))}
+                </select>
+                {mapGroupFilter !== 'all' && myPos ? (
+                  <p className="mt-1 text-[9px] leading-tight text-surface-dim">
+                    Grüner Ring: Gruppe in ca. {GROUP_PEER_NEARBY_KM} km – für Nah-Funk im Chat.
+                  </p>
+                ) : null}
+              </label>
+            ) : null}
+            {user ? (
+              <label className="mt-2 flex cursor-pointer items-start gap-1.5 border-t border-surface-variant/25 pt-2 text-[11px] font-medium leading-snug">
+                <input
+                  type="checkbox"
+                  checked={shareOnMap}
+                  onChange={(e) => void onToggleShare(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-surface-variant accent-primary"
+                />
+                <span>Position teilen</span>
+              </label>
+            ) : (
+              <p className="mt-2 border-t border-surface-variant/25 pt-2 text-[10px] leading-snug text-surface-dim">
+                <Link to="/login" className="font-bold text-primary-fixed-dim underline">
+                  Anmelden
+                </Link>{' '}
+                zum Mitfahren.
+              </p>
+            )}
+            {geoHint ? <p className="mt-1.5 text-[10px] font-medium leading-snug text-amber-200">{geoHint}</p> : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMapLeftInfoExpanded(true)}
+            className="pointer-events-auto absolute left-4 flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/35 bg-inverse-surface/95 text-inverse-on-surface shadow-lg backdrop-blur-sm active:scale-95 sm:left-6"
+            style={mapFabColumnBottomStyle}
+            aria-label="Gemeinsam auf der Karte: Details anzeigen"
+            title="Teilnehmer und Freigaben"
+          >
+            <span className="material-symbols-outlined text-[22px]">groups</span>
+            {participants.length > 0 ? (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-black text-on-primary tabular-nums ring-2 ring-inverse-surface">
+                {participants.length > 8 ? '8+' : participants.length}
+              </span>
+            ) : null}
+          </button>
+        )}
+
+        <div className="pointer-events-auto absolute right-4 flex flex-col items-end sm:right-6" style={mapFabColumnBottomStyle}>
+          <div className={mapRightFabExpanded ? 'flex flex-col items-end gap-2' : 'flex flex-col items-end gap-1.5'}>
+            <button
+              type="button"
+              onClick={() => goToMyLocation()}
+              className={
+                mapRightFabExpanded
+                  ? 'flex h-12 w-12 items-center justify-center rounded-full bg-primary text-on-primary shadow-xl ring-4 ring-primary/25 active:scale-95'
+                  : 'flex h-10 w-10 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg ring-2 ring-primary/20 active:scale-95'
+              }
+              aria-label="Karte auf meinen Standort zentrieren"
+              title="Meine Position"
+            >
+              <span className={mapRightFabExpanded ? 'material-symbols-outlined text-2xl' : 'material-symbols-outlined text-xl'}>
+                my_location
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void loadPois(center.lat, center.lng)
+                void loadParticipants(center.lat, center.lng)
+              }}
+              className={
+                mapRightFabExpanded
+                  ? 'flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95'
+                  : 'flex h-9 w-9 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-md active:scale-95'
+              }
+              aria-label="Karte aktualisieren"
+            >
+              <span className={mapRightFabExpanded ? 'material-symbols-outlined text-xl' : 'material-symbols-outlined text-lg'}>refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={openAddPoi}
+              className={
+                mapRightFabExpanded
+                  ? 'flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95'
+                  : 'flex h-9 w-9 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-md active:scale-95'
+              }
+              aria-label="Ort eintragen"
+            >
+              <span className={mapRightFabExpanded ? 'material-symbols-outlined text-xl' : 'material-symbols-outlined text-lg'}>
+                add_location_alt
+              </span>
+            </button>
+            <Link
+              to="/community"
+              className={
+                mapRightFabExpanded
+                  ? 'flex h-11 w-11 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-lg active:scale-95'
+                  : 'flex h-9 w-9 items-center justify-center rounded-full bg-surface-container-lowest text-on-surface-variant shadow-md active:scale-95'
+              }
+              aria-label="Community"
+            >
+              <span className={mapRightFabExpanded ? 'material-symbols-outlined text-xl' : 'material-symbols-outlined text-lg'}>forum</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className={
+                mapRightFabExpanded
+                  ? 'flex h-11 items-center gap-1.5 rounded-full bg-gradient-to-br from-error to-error-dark px-3.5 text-on-error shadow-lg active:scale-90'
+                  : 'flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-error to-error-dark text-on-error shadow-md active:scale-90'
+              }
+              aria-label="Hilfe und Notfallkontakte (SOS)"
+            >
+              <span className="material-symbols-outlined fill text-base">sos</span>
+              {mapRightFabExpanded ? (
+                <span className="font-sans text-[10px] font-black tracking-widest">YARDIM</span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapRightFabExpanded((v) => !v)}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-outline-variant/45 bg-surface-container-lowest/95 text-on-surface-variant shadow-md active:scale-95"
+              aria-expanded={mapRightFabExpanded}
+              aria-label={mapRightFabExpanded ? 'Kartenaktionen kompakt darstellen' : 'Kartenaktionen vergrößern'}
+              title={mapRightFabExpanded ? 'Kompakt' : 'Größer / mehr'}
+            >
+              <span className="material-symbols-outlined text-lg">{mapRightFabExpanded ? 'unfold_less' : 'unfold_more'}</span>
+            </button>
+          </div>
         </div>
       </div>
 

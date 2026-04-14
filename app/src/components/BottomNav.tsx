@@ -1,11 +1,30 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nContext'
 import { hasActiveNavSession } from '../lib/navSession'
 
 export function BottomNav() {
   const { t } = useI18n()
+  const navRef = useRef<HTMLElement>(null)
   const [hasActiveNavigation, setHasActiveNavigation] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = navRef.current
+    if (!el || typeof document === 'undefined') return
+    const root = document.documentElement
+    const publish = () => {
+      root.style.setProperty('--bottom-nav-height', `${Math.round(el.getBoundingClientRect().height)}px`)
+    }
+    publish()
+    const ro = new ResizeObserver(publish)
+    ro.observe(el)
+    window.addEventListener('resize', publish)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty('--bottom-nav-height')
+    }
+  }, [])
 
   useEffect(() => {
     const refresh = () => setHasActiveNavigation(hasActiveNavSession())
@@ -25,7 +44,10 @@ export function BottomNav() {
     { to: '/profile', label: t('navProfile'), icon: 'person' as const },
   ]
   return (
-    <nav className="fixed bottom-0 left-0 z-50 flex w-full justify-around rounded-t-3xl bg-surface-container-lowest/80 px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[0_-8px_32px_rgba(26,28,28,0.08)] backdrop-blur-3xl dark:bg-inverse-surface/80">
+    <nav
+      ref={navRef}
+      className="fixed bottom-0 left-0 z-50 flex w-full justify-around rounded-t-3xl bg-surface-container-lowest/80 px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[0_-8px_32px_rgba(26,28,28,0.08)] backdrop-blur-3xl dark:bg-inverse-surface/80"
+    >
       {nav.map(({ to, label, icon }) => (
         <NavLink
           key={to}
