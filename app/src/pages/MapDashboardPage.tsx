@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import maplibregl from 'maplibre-gl'
 import { Link, useNavigate } from 'react-router-dom'
 import { CreatePoiModal } from '../components/CreatePoiModal'
-import { GroupQuickWalkie } from '../components/GroupQuickWalkie'
 import { HelpModal } from '../components/HelpModal'
 import { ParticipantActionModal, type ParticipantSheetUser } from '../components/ParticipantActionModal'
 import {
@@ -168,11 +167,16 @@ export function MapDashboardPage() {
   const [curatedCategoryFilter, setCuratedCategoryFilter] = useState<CuratedPlaceCategory | ''>('')
   const [curatedSheet, setCuratedSheet] = useState<CuratedPlaceDto | null>(null)
   const [vignetteModalOpen, setVignetteModalOpen] = useState(false)
+  /** Snapshot für das Modal (bleibt erhalten, wenn die Route nach „Navigation beenden“ gelöscht wird). */
+  const [vignetteAdviceForModal, setVignetteAdviceForModal] = useState<RouteTollAdviceDto | null>(null)
+  const [vignetteRouteLabelForModal, setVignetteRouteLabelForModal] = useState<string | null>(null)
   const [vignetteCatalog, setVignetteCatalog] = useState<VignetteServiceProductDto[]>([])
   const [vignetteSelected, setVignetteSelected] = useState<string[]>([])
   const [vignetteNote, setVignetteNote] = useState('')
   const [vignetteBusy, setVignetteBusy] = useState(false)
   const [vignetteMsg, setVignetteMsg] = useState<string | null>(null)
+  /** Verhindert mehrfaches Auto-Öffnen für dieselbe Route + Länder-Kombination. */
+  const vignetteAutoOpenedRouteKeyRef = useRef<string | null>(null)
   const [participants, setParticipants] = useState<MapParticipantDto[]>([])
   const [center, setCenter] = useState<{ lat: number; lng: number }>({
     lat: MAP_INITIAL_CENTER[1],
@@ -199,6 +203,8 @@ export function MapDashboardPage() {
   const [mapLeftInfoExpanded, setMapLeftInfoExpanded] = useState(false)
   /** Rechte Karten-Aktionen: kompakte Icons vs. größere Darstellung inkl. SOS-Text. */
   const [mapRightFabExpanded, setMapRightFabExpanded] = useState(false)
+  /** Admin-Tipps-Filter: geschlossen nur Stern-Button, geöffnet Kategorien. */
+  const [tippsFilterOpen, setTippsFilterOpen] = useState(false)
   const [assistantQuestion, setAssistantQuestion] = useState('')
   const [assistantAnswer, setAssistantAnswer] = useState<AssistantAskDto | null>(null)
   const [assistantLoading, setAssistantLoading] = useState(false)
@@ -647,6 +653,8 @@ export function MapDashboardPage() {
 
   /** Route, Ziel und Session vollständig beenden (nicht nur Linie ausblenden). */
   function endNavigation() {
+    const snapTollAdvice = tollAdvice
+    const snapRouteLabel = navTarget?.label ?? null
     stopNavigationVoice()
     offRouteSinceRef.current = null
     ttsPrevManeuverIdxRef.current = -1
@@ -678,6 +686,9 @@ export function MapDashboardPage() {
     const m = mapRef.current
     if (m?.isStyleLoaded()) {
       m.easeTo({ bearing: 0, pitch: 0, duration: 700, essential: true })
+    }
+    if (token && snapTollAdvice?.countries?.length) {
+      void openVignetteServiceModal({ advice: snapTollAdvice, routeLabel: snapRouteLabel })
     }
   }
 
@@ -1031,51 +1042,93 @@ export function MapDashboardPage() {
     return 'Sonstiges'
   }, [tollVehicleResolved])
 
-  async function openVignetteServiceModal() {
-    if (!token) {
-      navigate('/login')
-      return
-    }
-    if (!tollAdvice?.countries?.length) return
-    setVignetteMsg(null)
-    setVignetteModalOpen(true)
-    setVignetteBusy(true)
-    try {
-      const { products } = await fetchVignetteServiceProducts()
-      setVignetteCatalog(products)
-      const codes = new Set(tollAdvice.countries.map((c) => c.code))
-      const vc = tollAdvice.vehicleClass
-      const el = products.filter(
-        (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
-      )
-      setVignetteSelected(el.map((p) => p.id))
-      if (el.length === 0) {
-        setVignetteMsg('Für die ermittelten Länder gibt es noch keine buchbaren Service-Produkte (Admin-Pflege).')
+  const routeTollSnapshotKey = useMemo(() => {
+    if (!routeGeometry?.coordinates?.length || !tollAdvice?.countries?.length) return null
+    const coords = routeGeometry.coordinates
+    const a = coords[0]
+    const b = coords[coords.length - 1]
+    const codes = tollAdvice.countries.map((c) => c.code).join(',')
+    return `${a[0]},${a[1]}|${b[0]},${b[1]}|${codes}`
+  }, [routeGeometry, tollAdvice])
+
+  const openVignetteServiceModal = useCallback(
+    async (opts?: { advice?: RouteTollAdviceDto | null; routeLabel?: string | null }) => {
+      if (!token) {
+        navigate('/login')
+        return
       }
-    } catch (e) {
-      setVignetteMsg(e instanceof Error ? e.message : 'Katalog konnte nicht geladen werden.')
-    } finally {
-      setVignetteBusy(false)
-    }
-  }
+      const adv = opts?.advice ?? tollAdvice
+      if (!adv?.countries?.length) return
+      setVignetteAdviceForModal(adv)
+      setVignetteRouteLabelForModal(
+        opts && 'routeLabel' in opts ? (opts.routeLabel ?? null) : (navTarget?.label ?? null),
+      )
+      setVignetteMsg(null)
+      setVignetteModalOpen(true)
+      setVignetteBusy(true)
+      try {
+        const { products } = await fetchVignetteServiceProducts()
+        setVignetteCatalog(products)
+        const codes = new Set(adv.countries.map((c) => c.code))
+        const vc = adv.vehicleClass
+        const el = products.filter(
+          (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
+        )
+        setVignetteSelected(el.map((p) => p.id))
+        if (el.length === 0) {
+          setVignetteMsg('Für die ermittelten Länder gibt es noch keine buchbaren Service-Produkte (Admin-Pflege).')
+        }
+      } catch (e) {
+        setVignetteMsg(e instanceof Error ? e.message : 'Katalog konnte nicht geladen werden.')
+      } finally {
+        setVignetteBusy(false)
+      }
+    },
+    [token, navigate, tollAdvice, navTarget?.label],
+  )
+
+  useEffect(() => {
+    if (!routeGeometry?.coordinates?.length) vignetteAutoOpenedRouteKeyRef.current = null
+  }, [routeGeometry?.coordinates?.length])
+
+  /** Mit aktiver Route: Vignetten-Übersicht automatisch im Modal, sobald Länder/Maut-Hinweise da sind (nicht unten in der Route-Leiste verstecken). */
+  useEffect(() => {
+    if (!routeTollSnapshotKey || !token) return
+    if (tollAdviceLoading || tollAdviceErr) return
+    if (!tollAdvice?.countries?.length) return
+    if (vignetteModalOpen) return
+    if (vignetteAutoOpenedRouteKeyRef.current === routeTollSnapshotKey) return
+    vignetteAutoOpenedRouteKeyRef.current = routeTollSnapshotKey
+    void openVignetteServiceModal()
+  }, [
+    routeTollSnapshotKey,
+    token,
+    tollAdviceLoading,
+    tollAdviceErr,
+    tollAdvice,
+    vignetteModalOpen,
+    openVignetteServiceModal,
+  ])
 
   async function submitVignetteOrderRequest() {
-    if (!token || !tollAdvice || vignetteSelected.length < 1) return
+    if (!token || !vignetteAdviceForModal || vignetteSelected.length < 1) return
     setVignetteBusy(true)
     setVignetteMsg(null)
     try {
       await createVignetteOrderRequest(token, {
-        vehicleClass: tollAdvice.vehicleClass,
-        countries: tollAdvice.countries,
-        routeLabel: navTarget?.label ? `Route nach ${navTarget.label}` : 'Geplante Route',
+        vehicleClass: vignetteAdviceForModal.vehicleClass,
+        countries: vignetteAdviceForModal.countries,
+        routeLabel: vignetteRouteLabelForModal ? `Route nach ${vignetteRouteLabelForModal}` : 'Geplante Route',
         productIds: vignetteSelected,
         customerNote: vignetteNote.trim(),
       })
       setVignetteMsg(
-        'Anfrage gesendet – unser Team meldet sich mit einem Angebot. Nach dem Angebot: Zahlung unter Profil → Vignetten & Maut.',
+        'Anfrage gesendet. Du erhältst eine E-Mail-Bestätigung (falls E-Mail konfiguriert ist). Unser Team meldet sich mit dem Gesamtangebot; danach zahlst du kumuliert einen Betrag unter Profil → Vignetten & Maut (Stripe/PayPal).',
       )
       window.setTimeout(() => {
         setVignetteModalOpen(false)
+        setVignetteAdviceForModal(null)
+        setVignetteRouteLabelForModal(null)
         setVignetteNote('')
       }, 2200)
     } catch (e) {
@@ -1090,13 +1143,29 @@ export function MapDashboardPage() {
   }
 
   const vignetteEligibleInModal = useMemo(() => {
-    if (!tollAdvice?.countries?.length) return []
-    const codes = new Set(tollAdvice.countries.map((c) => c.code))
-    const vc = tollAdvice.vehicleClass
+    if (!vignetteAdviceForModal?.countries?.length) return []
+    const codes = new Set(vignetteAdviceForModal.countries.map((c) => c.code))
+    const vc = vignetteAdviceForModal.vehicleClass
     return vignetteCatalog.filter(
       (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
     )
-  }, [tollAdvice, vignetteCatalog])
+  }, [vignetteAdviceForModal, vignetteCatalog])
+
+  const vignetteQuoteBreakdown = useMemo(() => {
+    const items = vignetteEligibleInModal.filter((p) => vignetteSelected.includes(p.id))
+    let sumService = 0
+    let sumRetailHint = 0
+    for (const p of items) {
+      sumService += p.serviceFeeEur
+      if (p.retailHintEur != null) sumRetailHint += p.retailHintEur
+    }
+    return {
+      items,
+      sumService,
+      sumRetailHint,
+      sumIndicative: sumService + sumRetailHint,
+    }
+  }, [vignetteEligibleInModal, vignetteSelected])
 
   const othersCount = user ? participants.filter((p) => p.userId !== user.id).length : participants.length
 
@@ -1286,7 +1355,7 @@ export function MapDashboardPage() {
       return {
         bottom: navHudExpanded
           ? `calc(${BOTTOM_NAV_CSS} + min(42vh, 17.5rem))`
-          : `calc(${BOTTOM_NAV_CSS} + 3.25rem)`,
+          : `calc(${BOTTOM_NAV_CSS} + 3.25rem - 34px)`,
       }
     }
     return { bottom: `calc(${BOTTOM_NAV_CSS} + 0.625rem)` }
@@ -1322,43 +1391,72 @@ export function MapDashboardPage() {
         <div className="pointer-events-none absolute top-0 left-0 z-[1] h-1 w-full bg-gradient-to-r from-tertiary via-secondary to-tertiary opacity-80" />
         {!mapPickTarget ? (
           <div
-            className="pointer-events-auto absolute left-2 z-[8] w-[min(calc(100vw-4.5rem),18rem)] rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/95 p-2 shadow-lg backdrop-blur-md"
+            className="pointer-events-auto absolute left-2 z-[8] flex flex-col items-start gap-2"
             style={{ bottom: `calc(${BOTTOM_NAV_CSS} + 4.25rem)` }}
           >
-            <p className="text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">Tipps (Admin)</p>
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {(
-                [
-                  { k: '' as const, lab: 'Alle' },
-                  { k: 'accommodation' as const, lab: 'Unterkunft' },
-                  { k: 'restaurant' as const, lab: 'Restaurant' },
-                  { k: 'rest_area' as const, lab: 'Rasthof' },
-                ] as const
-              ).map(({ k, lab }) => (
-                <button
-                  key={k || 'all'}
-                  type="button"
-                  onClick={() => setCuratedCategoryFilter(k)}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                    curatedCategoryFilter === k
-                      ? 'bg-primary text-on-primary'
-                      : 'bg-surface-container-high text-on-surface-variant'
-                  }`}
+            {!tippsFilterOpen ? (
+              <button
+                type="button"
+                onClick={() => setTippsFilterOpen(true)}
+                title="Tipps-Filter"
+                aria-expanded={false}
+                aria-label="Tipps-Filter öffnen"
+                className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/95 text-amber-600 shadow-lg backdrop-blur-md transition-transform active:scale-95 dark:border-outline-variant/35 dark:text-amber-400"
+              >
+                <span
+                  className="material-symbols-outlined text-[28px]"
+                  style={{ fontVariationSettings: curatedCategoryFilter ? "'FILL' 1" : "'FILL' 0" }}
                 >
-                  {lab}
-                </button>
-              ))}
-            </div>
-            <p className="mt-1 text-[9px] text-on-surface-variant">
-              {curatedPlaces.length} Ort{curatedPlaces.length === 1 ? '' : 'e'} · Marker antippen für Infos & Route
-            </p>
+                  star
+                </span>
+                {curatedCategoryFilter ? (
+                  <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary ring-2 ring-surface-container-lowest" />
+                ) : null}
+              </button>
+            ) : (
+              <div className="w-[min(calc(100vw-4.5rem),18rem)] rounded-2xl border border-outline-variant/50 bg-surface-container-lowest/95 p-2 shadow-lg backdrop-blur-md">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">Tipps (Admin)</p>
+                  <button
+                    type="button"
+                    onClick={() => setTippsFilterOpen(false)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high"
+                    aria-label="Tipps-Filter schließen"
+                  >
+                    <span className="material-symbols-outlined text-xl">close</span>
+                  </button>
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {(
+                    [
+                      { k: '' as const, lab: 'Alle' },
+                      { k: 'accommodation' as const, lab: 'Unterkunft' },
+                      { k: 'restaurant' as const, lab: 'Restaurant' },
+                      { k: 'rest_area' as const, lab: 'Rasthof' },
+                    ] as const
+                  ).map(({ k, lab }) => (
+                    <button
+                      key={k || 'all'}
+                      type="button"
+                      onClick={() => setCuratedCategoryFilter(k)}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        curatedCategoryFilter === k
+                          ? 'bg-primary text-on-primary'
+                          : 'bg-surface-container-high text-on-surface-variant'
+                      }`}
+                    >
+                      {lab}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[9px] text-on-surface-variant">
+                  {curatedPlaces.length} Ort{curatedPlaces.length === 1 ? '' : 'e'} · Marker antippen für Infos & Route
+                </p>
+              </div>
+            )}
           </div>
         ) : null}
       </div>
-
-      {!mapPickTarget ? (
-        <GroupQuickWalkie token={token} user={user} groups={myGroups} mapGroupFilter={mapGroupFilter} />
-      ) : null}
 
       {routeGeometry?.coordinates?.length ? (
         <div
@@ -1975,88 +2073,48 @@ export function MapDashboardPage() {
                   </ol>
                 ) : null}
 
-                <div className="mt-4 rounded-xl border border-outline-variant/35 bg-surface-container-high/40 p-3">
-                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">
-                    Länder &amp; Vignetten / Maut
-                  </p>
-                  <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">
-                    Fahrzeugklasse aus dem Profil ({tollVehicleLabel}). Unter{' '}
-                    <Link to="/profile" className="font-bold text-primary underline">
-                      Profil
-                    </Link>{' '}
-                    anpassen.
-                  </p>
-                  {tollAdviceLoading ? (
-                    <p className="mt-2 text-xs font-medium text-primary">Ermittle Länder entlang der Route…</p>
-                  ) : null}
-                  {tollAdviceErr ? <p className="mt-2 text-xs font-medium text-error">{tollAdviceErr}</p> : null}
-                  {tollAdvice && tollAdvice.countries.length > 0 ? (
-                    <div className="mt-2">
-                      <p className="text-[0.6rem] font-bold uppercase text-on-surface-variant">Route durch</p>
-                      <p className="mt-1 text-sm font-semibold text-on-surface">
+                {routeGeometry?.coordinates?.length ? (
+                  <div className="mt-4 rounded-xl border border-outline-variant/35 bg-surface-container-high/40 p-3">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">
+                      Vignetten & Maut
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                      Übersicht, externe Kauf-Links und Kaufanfrage liegen im{' '}
+                      <strong className="text-on-surface">Dialog</strong> – er öffnet mit der Route automatisch, sobald
+                      die Länder entlang der Strecke ermittelt sind.
+                    </p>
+                    <p
+                      className="mt-2 border-l-2 border-outline-variant/60 pl-2 text-[10px] leading-snug text-on-surface-variant"
+                      role="note"
+                    >
+                      Fahrzeugklasse: {tollVehicleLabel} (
+                      <Link to="/profile" className="font-bold text-primary underline">
+                        Profil
+                      </Link>
+                      ).
+                    </p>
+                    {tollAdviceLoading ? (
+                      <p className="mt-2 text-xs font-medium text-primary">Ermittle Länder entlang der Route…</p>
+                    ) : null}
+                    {tollAdviceErr ? <p className="mt-2 text-xs font-medium text-error">{tollAdviceErr}</p> : null}
+                    {tollAdvice && tollAdvice.countries.length > 0 ? (
+                      <p className="mt-2 text-xs font-semibold text-on-surface">
                         {tollAdvice.countries.map((c) => c.name).join(' → ')}
                       </p>
-                    </div>
-                  ) : null}
-                  {tollAdvice && tollAdvice.products.length > 0 ? (
-                    <ul className="mt-3 space-y-2">
-                      {tollAdvice.products.map((p) => (
-                        <li
-                          key={p.id}
-                          className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest/90 p-2.5"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-on-surface">{p.title}</p>
-                              <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
-                              <p className="mt-1 text-[10px] uppercase text-on-surface-variant/80">
-                                {p.type === 'vignette' ? 'Vignette' : p.type === 'toll' ? 'Maut' : 'Info'}
-                              </p>
-                            </div>
-                            {p.purchaseUrl ? (
-                              <a
-                                href={p.purchaseUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
-                              >
-                                Kaufen / Info ↗
-                              </a>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {tollAdvice && !tollAdviceLoading && tollAdvice.countries.length === 0 ? (
-                    <p className="mt-2 text-xs text-on-surface-variant">Keine Länder ermittelt (Ortssuche).</p>
-                  ) : null}
-                  {tollAdvice && tollAdvice.countries.length > 0 && tollAdvice.products.length === 0 && !tollAdviceLoading ? (
-                    <p className="mt-2 text-xs text-on-surface-variant">
-                      Für diese Länder sind keine Vignetten-Vorschläge hinterlegt – bitte selbst prüfen.
-                    </p>
-                  ) : null}
-                  {tollAdvice?.disclaimer ? (
-                    <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{tollAdvice.disclaimer}</p>
-                  ) : null}
-                  {tollAdvice && tollAdvice.countries.length > 0 ? (
-                    <div className="mt-3 rounded-lg border border-primary/25 bg-primary/5 p-2.5">
-                      <p className="text-[11px] font-bold text-on-surface">Vignetten & Maut über uns</p>
-                      <p className="mt-1 text-[10px] leading-snug text-on-surface-variant">
-                        Wir bereiten Kauf/Registrierung vor – Servicepauschale laut Admin-Katalog. Offizielle Gebühren
-                        zzgl. Bearbeitung.
-                      </p>
-                      <button
-                        type="button"
-                        disabled={tollAdviceLoading}
-                        onClick={() => void openVignetteServiceModal()}
-                        className="mt-2 w-full rounded-xl bg-secondary py-2.5 text-xs font-black text-on-secondary disabled:opacity-40"
-                      >
-                        {token ? 'Anfrage mit Route & Ländern senden' : 'Anmelden für Kaufanfrage'}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                    ) : null}
+                    {tollAdvice && !tollAdviceLoading && tollAdvice.countries.length === 0 ? (
+                      <p className="mt-2 text-xs text-on-surface-variant">Keine Länder ermittelt (Ortssuche).</p>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={tollAdviceLoading || !tollAdvice?.countries?.length}
+                      onClick={() => void openVignetteServiceModal()}
+                      className="mt-3 w-full rounded-xl bg-secondary py-2.5 text-xs font-black text-on-secondary disabled:opacity-40"
+                    >
+                      {token ? 'Vignetten & Maut: Dialog öffnen' : 'Anmelden – Dialog mit Übersicht'}
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 rounded-xl border border-outline-variant/35 bg-surface-container-high/40 p-3">
                   <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">
@@ -2307,7 +2365,7 @@ export function MapDashboardPage() {
                 </select>
                 {mapGroupFilter !== 'all' && myPos ? (
                   <p className="mt-1 text-[9px] leading-tight text-surface-dim">
-                    Grüner Ring: Gruppe in ca. {GROUP_PEER_NEARBY_KM} km – für Nah-Funk im Chat.
+                    Grüner Ring: Gruppe in ca. {GROUP_PEER_NEARBY_KM} km – für Nah-Funk im Chat.
                   </p>
                 ) : null}
               </label>
@@ -2530,7 +2588,7 @@ export function MapDashboardPage() {
         </div>
       ) : null}
 
-      {vignetteModalOpen && tollAdvice ? (
+      {vignetteModalOpen && vignetteAdviceForModal ? (
         <div
           className="fixed inset-0 z-[75] flex items-end justify-center bg-black/45 p-4 sm:items-center"
           role="dialog"
@@ -2542,48 +2600,166 @@ export function MapDashboardPage() {
               Vignetten-Service
             </h2>
             <p className="mt-1 text-xs text-on-surface-variant">
-              Route: {tollAdvice.countries.map((c) => c.name).join(' → ')} · Fahrzeug: {tollVehicleLabel}
+              Route: {vignetteAdviceForModal.countries.map((c) => c.name).join(' → ')} · Fahrzeug: {tollVehicleLabel}
             </p>
+
+            <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">
+                Übersicht: Hinweise & direkte Anbieter
+              </p>
+              {vignetteAdviceForModal.products.length > 0 ? (
+                <ul className="mt-2 space-y-2">
+                  {vignetteAdviceForModal.products.map((p) => (
+                    <li
+                      key={p.id}
+                      className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest/90 p-2.5"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-on-surface">{p.title}</p>
+                          <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
+                          <p className="mt-1 text-[10px] uppercase text-on-surface-variant/80">
+                            {p.type === 'vignette' ? 'Vignette' : p.type === 'toll' ? 'Maut' : 'Info'}
+                          </p>
+                        </div>
+                        {p.purchaseUrl ? (
+                          <a
+                            href={p.purchaseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
+                          >
+                            Kaufen / Info ↗
+                          </a>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[11px] leading-snug text-on-surface-variant">
+                  Für diese Route liegen keine verlinkten Vignetten-/Maut-Vorschläge vor. Du kannst trotzdem eine Anfrage
+                  an unser Team stellen (unten).
+                </p>
+              )}
+              {vignetteAdviceForModal.disclaimer ? (
+                <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{vignetteAdviceForModal.disclaimer}</p>
+              ) : null}
+            </div>
+
             {vignetteBusy && vignetteEligibleInModal.length === 0 ? (
               <p className="mt-3 text-sm text-on-surface-variant">Katalog wird geladen…</p>
             ) : null}
-            <div className="mt-3 space-y-2">
-              {vignetteEligibleInModal.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex cursor-pointer gap-3 rounded-xl border border-outline-variant/50 bg-surface-container-high/40 p-3"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-                    checked={vignetteSelected.includes(p.id)}
-                    onChange={() => toggleVignetteProduct(p.id)}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-on-surface">{p.title}</p>
-                    <p className="text-[11px] text-on-surface-variant">
-                      {p.countryCode} · {p.kind === 'vignette' ? 'Vignette' : p.kind === 'toll' ? 'Maut' : 'Info'}
-                      {p.retailHintEur != null ? ` · ab ca. ${p.retailHintEur.toFixed(2)} €` : ''}
-                      {` · Service ${p.serviceFeeEur.toFixed(2)} €`}
-                    </p>
-                    {p.description ? (
-                      <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
-                    ) : null}
-                  </div>
-                </label>
-              ))}
+
+            <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">1. Leistungen wählen</p>
+              <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">
+                Preise im Katalog (Service + Richtpreis-Hinweis) sind Orientierung. Das verbindliche Gesamtangebot legt
+                das Team fest; du zahlst <strong className="text-on-surface">einen kumulierten Betrag</strong> pro
+                Anfrage.
+              </p>
+              <div className="mt-2 space-y-2">
+                {vignetteEligibleInModal.map((p) => (
+                  <label
+                    key={p.id}
+                    className="flex cursor-pointer gap-3 rounded-xl border border-outline-variant/50 bg-surface-container-lowest/90 p-3"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                      checked={vignetteSelected.includes(p.id)}
+                      onChange={() => toggleVignetteProduct(p.id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-on-surface">{p.title}</p>
+                      <p className="text-[11px] text-on-surface-variant">
+                        {p.countryCode} · {p.kind === 'vignette' ? 'Vignette' : p.kind === 'toll' ? 'Maut' : 'Info'}
+                      </p>
+                      {p.description ? (
+                        <p className="mt-1 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
+                      ) : null}
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
-            <label className="mt-3 block text-[11px] font-bold text-on-surface-variant">Hinweis an uns (optional)</label>
-            <textarea
-              value={vignetteNote}
-              onChange={(e) => setVignetteNote(e.target.value)}
-              className="mt-1 min-h-[4rem] w-full rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
-              maxLength={2000}
-              placeholder="z. B. Gültigkeit 10 Tage, Kennzeichen …"
-            />
+
+            <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-primary">Kostenübersicht (Indikativ)</p>
+              {vignetteQuoteBreakdown.items.length < 1 ? (
+                <p className="mt-2 text-xs text-on-surface-variant">Noch keine Position gewählt.</p>
+              ) : (
+                <>
+                  <table className="mt-2 w-full border-collapse text-left text-[11px]">
+                    <thead>
+                      <tr className="border-b border-outline-variant/40 text-on-surface-variant">
+                        <th className="py-1 pr-2 font-bold">Position</th>
+                        <th className="py-1 text-right font-bold">Service</th>
+                        <th className="py-1 pl-2 text-right font-bold">Richtpreis</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vignetteQuoteBreakdown.items.map((p) => (
+                        <tr key={p.id} className="border-b border-outline-variant/25 text-on-surface">
+                          <td className="max-w-[10rem] truncate py-1.5 pr-2" title={p.title}>
+                            {p.title}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">{p.serviceFeeEur.toFixed(2)} €</td>
+                          <td className="py-1.5 pl-2 text-right tabular-nums text-on-surface-variant">
+                            {p.retailHintEur != null ? `${p.retailHintEur.toFixed(2)} €` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="mt-2 space-y-0.5 border-t border-outline-variant/35 pt-2 text-xs tabular-nums">
+                    <div className="flex justify-between text-on-surface-variant">
+                      <span>Summe Servicepauschalen</span>
+                      <span className="font-semibold text-on-surface">{vignetteQuoteBreakdown.sumService.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between text-on-surface-variant">
+                      <span>Summe Richtpreis-Hinweise</span>
+                      <span className="font-semibold text-on-surface">
+                        {vignetteQuoteBreakdown.sumRetailHint > 0
+                          ? `${vignetteQuoteBreakdown.sumRetailHint.toFixed(2)} €`
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-outline-variant/30 pt-1.5 font-bold text-on-surface">
+                      <span>Indikativ gesamt</span>
+                      <span>{vignetteQuoteBreakdown.sumIndicative.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">2. Nachricht ans Team</p>
+              <label className="sr-only" htmlFor="vignette-customer-note">
+                Hinweis an uns
+              </label>
+              <textarea
+                id="vignette-customer-note"
+                value={vignetteNote}
+                onChange={(e) => setVignetteNote(e.target.value)}
+                className="mt-2 min-h-[4rem] w-full rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
+                maxLength={2000}
+                placeholder="z. B. Gültigkeit 10 Tage, Kennzeichen, Sonderfälle …"
+              />
+            </div>
+
+            <div className="mt-3 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">3. Anfrage absenden</p>
+              <p className="mt-1 text-[11px] text-on-surface-variant">
+                Wir benachrichtigen das Team per E-Mail; du bekommst eine Bestätigung an deine Kontaktadresse, wenn der
+                Versand eingerichtet ist.
+              </p>
+            </div>
+
             {vignetteMsg ? (
               <p
-                className={`mt-2 rounded-lg px-2 py-1.5 text-xs font-medium ${
+                className={`mt-3 rounded-lg px-2 py-1.5 text-xs font-medium ${
                   vignetteMsg.startsWith('Anfrage gesendet')
                     ? 'bg-primary/15 text-primary'
                     : 'bg-error-container text-on-error-container'
@@ -2606,6 +2782,8 @@ export function MapDashboardPage() {
                 disabled={vignetteBusy}
                 onClick={() => {
                   setVignetteModalOpen(false)
+                  setVignetteAdviceForModal(null)
+                  setVignetteRouteLabelForModal(null)
                   setVignetteMsg(null)
                 }}
                 className="flex-1 rounded-xl border border-outline-variant py-3 text-sm font-bold text-on-surface"
