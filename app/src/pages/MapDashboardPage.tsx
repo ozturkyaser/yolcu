@@ -158,6 +158,12 @@ const OFF_ROUTE_AUTO_REROUTE_M = 105
 const OFF_ROUTE_STABLE_MS = 6000
 /** Mindestabstand zwischen Auto-Reroutes */
 const AUTO_REROUTE_COOLDOWN_MS = 52_000
+const VIGNETTE_LOADING_TIPS = [
+  'Tipp: Fahrzeugklasse im Profil prüfen - davon hängen die Vorschläge ab.',
+  'Tipp: Du kannst schon jetzt eine Nachricht mit Kennzeichen/Gültigkeit vorbereiten.',
+  'Tipp: Offizielle Gebühren + Servicepauschale werden im Dialog getrennt angezeigt.',
+  'Tipp: Für mehrere Länder kannst du alles als eine Anfrage bündeln.',
+]
 
 export function MapDashboardPage() {
   const { user, token } = useAuth()
@@ -176,6 +182,8 @@ export function MapDashboardPage() {
   const [vignetteNote, setVignetteNote] = useState('')
   const [vignetteBusy, setVignetteBusy] = useState(false)
   const [vignetteMsg, setVignetteMsg] = useState<string | null>(null)
+  const [vignetteModalEntered, setVignetteModalEntered] = useState(false)
+  const [vignetteLoadingTipIndex, setVignetteLoadingTipIndex] = useState(0)
   /** Verhindert mehrfaches Auto-Öffnen für dieselbe Route + Länder-Kombination. */
   const vignetteAutoOpenedRouteKeyRef = useRef<string | null>(null)
   const [participants, setParticipants] = useState<MapParticipantDto[]>([])
@@ -1043,15 +1051,13 @@ export function MapDashboardPage() {
     return 'Sonstiges'
   }, [tollVehicleResolved])
 
-  const routeTollSnapshotKey = useMemo(() => {
-    if (tollAdviceLoading) return null
-    if (!routeGeometry?.coordinates?.length || !tollAdvice?.countries?.length) return null
+  const routeVignetteModalAutoKey = useMemo(() => {
+    if (!routeGeometry?.coordinates?.length) return null
     const coords = routeGeometry.coordinates
     const a = coords[0]
     const b = coords[coords.length - 1]
-    const codes = tollAdvice.countries.map((c) => c.code).join(',')
-    return `${a[0]},${a[1]}|${b[0]},${b[1]}|${codes}`
-  }, [routeGeometry, tollAdvice, tollAdviceLoading])
+    return `${a[0]},${a[1]}|${b[0]},${b[1]}`
+  }, [routeGeometry])
 
   const openVignetteServiceModal = useCallback(
     async (opts?: {
@@ -1068,17 +1074,18 @@ export function MapDashboardPage() {
       let adv: RouteTollAdviceDto | null = opts?.advice ?? tollAdvice ?? null
 
       if (!adv) {
-        if (!routeGeometry?.coordinates?.length || tollAdviceLoading) return
+        if (!routeGeometry?.coordinates?.length) return
         adv = {
           vehicleClass: vc,
           countries: [],
           products: [],
           disclaimer:
-            tollAdviceErr ||
-            'Maut-/Länderinfos konnten nicht geladen werden. Bitte Verbindung/API prüfen und die Seite neu laden.',
+            tollAdviceLoading
+              ? 'Länder und Maut-Hinweise werden gerade ermittelt…'
+              : tollAdviceErr ||
+                'Maut-/Länderinfos konnten nicht geladen werden. Bitte Verbindung/API prüfen und die Seite neu laden.',
         }
       } else if (!adv.countries.length) {
-        if (tollAdviceLoading) return
         if (!routeGeometry?.coordinates?.length) return
       }
 
@@ -1129,27 +1136,63 @@ export function MapDashboardPage() {
     if (!routeGeometry?.coordinates?.length) vignetteAutoOpenedRouteKeyRef.current = null
   }, [routeGeometry?.coordinates?.length])
 
-  /** Mit aktiver Route: Vignetten-Übersicht automatisch im Modal, sobald Länder/Maut-Hinweise da sind (nicht unten in der Route-Leiste verstecken). */
   useEffect(() => {
-    if (!routeTollSnapshotKey || !token) return
-    if (tollAdviceLoading || tollAdviceErr) return
-    if (!tollAdvice?.countries?.length) return
+    if (!vignetteModalOpen) {
+      setVignetteModalEntered(false)
+      return
+    }
+    const id = requestAnimationFrame(() => setVignetteModalEntered(true))
+    return () => cancelAnimationFrame(id)
+  }, [vignetteModalOpen])
+
+  useEffect(() => {
+    const hasCountries = (vignetteAdviceForModal?.countries?.length ?? 0) > 0
+    const shouldAnimateTips = vignetteModalOpen && tollAdviceLoading && !hasCountries
+    if (!shouldAnimateTips) {
+      setVignetteLoadingTipIndex(0)
+      return
+    }
+    const id = window.setInterval(() => {
+      setVignetteLoadingTipIndex((prev) => (prev + 1) % VIGNETTE_LOADING_TIPS.length)
+    }, 2600)
+    return () => window.clearInterval(id)
+  }, [vignetteModalOpen, tollAdviceLoading, vignetteAdviceForModal?.countries?.length])
+
+  /** Mit aktiver Route: Dialog sofort öffnen; Hinweise laden dann nach. */
+  useEffect(() => {
+    if (!routeVignetteModalAutoKey || !token) return
     if (vignetteModalOpen) return
-    if (vignetteAutoOpenedRouteKeyRef.current === routeTollSnapshotKey) return
+    if (vignetteAutoOpenedRouteKeyRef.current === routeVignetteModalAutoKey) return
     void openVignetteServiceModalRef.current({
       advice: tollAdvice,
       routeLabel: navTarget?.label ?? null,
-      autoMarkKey: routeTollSnapshotKey,
+      autoMarkKey: routeVignetteModalAutoKey,
     })
   }, [
-    routeTollSnapshotKey,
+    routeVignetteModalAutoKey,
     token,
-    tollAdviceLoading,
-    tollAdviceErr,
     tollAdvice,
     vignetteModalOpen,
     navTarget?.label,
   ])
+
+  /**
+   * Wenn der Dialog bereits mit Platzhalter geöffnet wurde, soll er nach Ankunft
+   * der echten Mautdaten sofort auf die echte Übersicht wechseln (ohne neu öffnen).
+   */
+  useEffect(() => {
+    if (!vignetteModalOpen) return
+    if (!tollAdvice?.countries?.length) return
+    if (vignetteAdviceForModal?.countries?.length) return
+    setVignetteAdviceForModal(tollAdvice)
+    const codes = new Set(tollAdvice.countries.map((c) => c.code))
+    const vc = tollAdvice.vehicleClass
+    const eligible = vignetteCatalog.filter(
+      (p) => codes.has(p.countryCode) && (p.vehicleClass === 'all' || p.vehicleClass === vc),
+    )
+    setVignetteSelected((prev) => (prev.length > 0 ? prev : eligible.map((p) => p.id)))
+    if (eligible.length > 0) setVignetteMsg(null)
+  }, [vignetteModalOpen, tollAdvice, vignetteAdviceForModal, vignetteCatalog])
 
   async function submitVignetteOrderRequest() {
     if (!token || !vignetteAdviceForModal || vignetteSelected.length < 1) return
@@ -2636,12 +2679,18 @@ export function MapDashboardPage() {
       vignetteAdviceForModal
         ? createPortal(
             <div
-              className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+              className={`fixed inset-0 z-[10000] flex items-end justify-center bg-black/45 p-4 transition-opacity duration-220 sm:items-center ${
+                vignetteModalEntered ? 'opacity-100' : 'opacity-0'
+              }`}
               role="dialog"
               aria-modal
               aria-labelledby="vignette-modal-title"
             >
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 shadow-2xl">
+          <div
+            className={`max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 shadow-2xl transition-all duration-220 ${
+              vignetteModalEntered ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-5 scale-[0.98] opacity-0'
+            }`}
+          >
             <h2 id="vignette-modal-title" className="text-lg font-black text-on-surface">
               Vignetten-Service
             </h2>
@@ -2656,49 +2705,23 @@ export function MapDashboardPage() {
               Fahrzeug: {tollVehicleLabel}
             </p>
 
-            <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
-              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">
-                Übersicht: Hinweise & direkte Anbieter
-              </p>
-              {vignetteAdviceForModal.products.length > 0 ? (
-                <ul className="mt-2 space-y-2">
-                  {vignetteAdviceForModal.products.map((p) => (
-                    <li
-                      key={p.id}
-                      className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest/90 p-2.5"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-on-surface">{p.title}</p>
-                          <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
-                          <p className="mt-1 text-[10px] uppercase text-on-surface-variant/80">
-                            {p.type === 'vignette' ? 'Vignette' : p.type === 'toll' ? 'Maut' : 'Info'}
-                          </p>
-                        </div>
-                        {p.purchaseUrl ? (
-                          <a
-                            href={p.purchaseUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
-                          >
-                            Kaufen / Info ↗
-                          </a>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
+            {tollAdviceLoading && vignetteAdviceForModal.countries.length === 0 ? (
+              <div className="mt-3 rounded-xl border border-primary/25 bg-primary/5 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+                  <p className="text-sm font-semibold text-primary">Vignetten-Berechnung läuft…</p>
+                </div>
                 <p className="mt-2 text-[11px] leading-snug text-on-surface-variant">
-                  Für diese Route liegen keine verlinkten Vignetten-/Maut-Vorschläge vor. Du kannst trotzdem eine Anfrage
-                  an unser Team stellen (unten).
+                  Wir prüfen gerade Länder, Maut und passende Vignetten entlang deiner Route.
                 </p>
-              )}
-              {vignetteAdviceForModal.disclaimer ? (
-                <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{vignetteAdviceForModal.disclaimer}</p>
-              ) : null}
-            </div>
+                <div className="mt-2 rounded-lg border border-outline-variant/35 bg-surface-container-lowest/80 px-2.5 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-on-surface-variant">Tipps während der Berechnung</p>
+                  <p className="mt-1 text-xs font-medium text-on-surface transition-opacity duration-300">
+                    {VIGNETTE_LOADING_TIPS[vignetteLoadingTipIndex]}
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             {vignetteBusy && vignetteEligibleInModal.length === 0 ? (
               <p className="mt-3 text-sm text-on-surface-variant">Katalog wird geladen…</p>
@@ -2821,6 +2844,50 @@ export function MapDashboardPage() {
                 {vignetteMsg}
               </p>
             ) : null}
+
+            <div className="mt-3 rounded-xl border border-outline-variant/40 bg-surface-container-high/25 p-3">
+              <p className="text-[0.65rem] font-black uppercase tracking-wide text-on-surface-variant">
+                Übersicht: Hinweise & direkte Anbieter
+              </p>
+              {vignetteAdviceForModal.products.length > 0 ? (
+                <ul className="mt-2 space-y-2">
+                  {vignetteAdviceForModal.products.map((p) => (
+                    <li
+                      key={p.id}
+                      className="rounded-lg border border-outline-variant/30 bg-surface-container-lowest/90 p-2.5"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-on-surface">{p.title}</p>
+                          <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">{p.description}</p>
+                          <p className="mt-1 text-[10px] uppercase text-on-surface-variant/80">
+                            {p.type === 'vignette' ? 'Vignette' : p.type === 'toll' ? 'Maut' : 'Info'}
+                          </p>
+                        </div>
+                        {p.purchaseUrl ? (
+                          <a
+                            href={p.purchaseUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
+                          >
+                            Kaufen / Info ↗
+                          </a>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[11px] leading-snug text-on-surface-variant">
+                  Für diese Route liegen keine verlinkten Vignetten-/Maut-Vorschläge vor. Du kannst trotzdem eine Anfrage
+                  an unser Team stellen.
+                </p>
+              )}
+              {vignetteAdviceForModal.disclaimer ? (
+                <p className="mt-2 text-[10px] leading-snug text-on-surface-variant">{vignetteAdviceForModal.disclaimer}</p>
+              ) : null}
+            </div>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
