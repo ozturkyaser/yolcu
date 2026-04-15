@@ -6,15 +6,6 @@ import { AuthProvider } from './context/AuthContext'
 import './index.css'
 import App from './App.tsx'
 
-/** Nach erstem Paint registrieren; Fehler dürfen die App nicht blockieren (weiße Seite). */
-queueMicrotask(() => {
-  try {
-    registerSW({ immediate: true })
-  } catch (e) {
-    console.warn('[PWA] Service Worker konnte nicht registriert werden.', e)
-  }
-})
-
 const rootEl = document.getElementById('root')
 if (!rootEl) {
   document.body.innerHTML =
@@ -30,3 +21,25 @@ if (!rootEl) {
     </StrictMode>,
   )
 }
+
+/** PWA erst nach dem ersten React-Render (weniger Main-Thread-Konflikte, klarere Fehler). */
+function scheduleServiceWorkerRegistration() {
+  const run = () => {
+    try {
+      registerSW({
+        immediate: true,
+        onRegisterError(err) {
+          console.warn('[PWA] Service Worker konnte nicht registriert werden.', err)
+        },
+      })
+    } catch (e) {
+      console.warn('[PWA] registerSW:', e)
+    }
+  }
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: 5000 })
+  } else {
+    window.setTimeout(run, 0)
+  }
+}
+scheduleServiceWorkerRegistration()

@@ -79,6 +79,9 @@ export default defineConfig({
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,webmanifest}'],
+        /** Haupt-Chunk > 2 MiB möglich – sonst schlägt Precache still fehl und Updates verhalten sich merkwürdig. */
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
