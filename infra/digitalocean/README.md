@@ -71,6 +71,26 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 Dann nur Port **80** in der Firewall nötig (plus 22).
 
+## Automatischer Docker-Neuaufbau
+
+### Nach jedem Push auf `main` (GitHub Actions)
+
+Im Repo ist **`.github/workflows/deploy-digitalocean.yml`** hinterlegt: bei Push auf `main` (oder manuell *workflow_dispatch*) verbindet sich GitHub per SSH mit der Droplet, macht `git pull --ff-only` und führt **`./scripts/docker-full-rebuild.sh prod`** aus (voller Neuaufbau mit `--no-cache`).
+
+Benötigte Repository-Secrets: `DO_HOST`, `DO_USER`, `DO_SSH_KEY`, `DO_PROJECT_PATH` (absoluter Pfad zum Repo auf dem Server, z. B. `/opt/yol`).
+
+### Nur wenn du auf dem Server manuell `git pull` machst
+
+Optional den **Git-Hook** installieren — dann läuft nach jedem erfolgreichen Pull automatisch dasselbe Rebuild-Skript:
+
+```bash
+cd /opt/yol   # dein Klon
+chmod +x scripts/install-server-post-pull-rebuild-hook.sh
+./scripts/install-server-post-pull-rebuild-hook.sh
+```
+
+Standard ist **Prod** (`prod`). Für die Dev-Compose-Datei: `SERVER_DOCKER_REBUILD_MODE=dev ./scripts/install-server-post-pull-rebuild-hook.sh`.
+
 ## Logs & Neustart
 
 ```bash

@@ -25,5 +25,5 @@ jobs:
             cd "${{ secrets.DO_PROJECT_PATH }}"
             git checkout main
             git pull --ff-only origin main
-            docker compose -f docker-compose.prod.yml up -d --build
-            docker compose -f docker-compose.prod.yml ps
+            chmod +x scripts/docker-full-rebuild.sh 2>/dev/null || true
+            ./scripts/docker-full-rebuild.sh prod

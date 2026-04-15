@@ -33,6 +33,8 @@ chmod +x scripts/restart-rebuild-all.sh scripts/docker-full-rebuild.sh
 
 Entspricht `docker compose down`, `build --no-cache` und `up -d --force-recreate`.
 
+**Server nach `git pull`:** optional den Hook installieren: `./scripts/install-server-post-pull-rebuild-hook.sh` (führt danach automatisch `./scripts/docker-full-rebuild.sh` aus). Bei Push auf `main` kann zusätzlich der Workflow **Deploy DigitalOcean** (GitHub Actions) dasselbe auf der Droplet auslösen, sofern die Secrets gesetzt sind.
+
 ## Voller lokaler Start (UI + API + DB)
 
 ```bash

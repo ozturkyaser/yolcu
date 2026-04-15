@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Git post-merge Hook: nach erfolgreichem Merge (z. B. `git pull`) Docker-Stack neu bauen.
+# Installation: ./scripts/install-server-post-pull-rebuild-hook.sh
+#
+# Modus: SERVER_DOCKER_REBUILD_MODE=dev|prod (Standard: prod)
+
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$ROOT" ]]; then
+  echo "post-merge-docker-rebuild: kein Git-Repository" >&2
+  exit 0
+fi
+cd "$ROOT"
+
+MODE="${SERVER_DOCKER_REBUILD_MODE:-prod}"
+if [[ "$MODE" != "dev" && "$MODE" != "prod" ]]; then
+  echo "post-merge-docker-rebuild: SERVER_DOCKER_REBUILD_MODE muss dev oder prod sein (ist: $MODE)" >&2
+  exit 1
+fi
+
+if [[ -f scripts/docker-full-rebuild.sh ]]; then
+  exec bash scripts/docker-full-rebuild.sh "$MODE"
+fi
+
+echo "post-merge-docker-rebuild: scripts/docker-full-rebuild.sh nicht gefunden — übersprungen." >&2
+exit 0
