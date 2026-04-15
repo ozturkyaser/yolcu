@@ -62,6 +62,36 @@ async function ensureUserRoleColumn(): Promise<void> {
   await pool.query(`UPDATE users SET role = 'admin' WHERE email = 'test@yol.local'`)
 }
 
+/** Karten-POIs und Live-Präsenz: bei älteren DBs ohne einmaliges INIT_DB anlegen (verhindert 500 auf /api/pois, /api/presence/nearby). */
+async function ensureMapPoisAndLivePresenceTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS map_pois (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      created_by UUID REFERENCES users (id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
+      lat DOUBLE PRECISION NOT NULL,
+      lng DOUBLE PRECISION NOT NULL,
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS map_pois_created_idx ON map_pois (created_at DESC)`,
+  )
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS map_live_positions (
+      user_id UUID PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+      lat DOUBLE PRECISION NOT NULL,
+      lng DOUBLE PRECISION NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS map_live_positions_updated_idx ON map_live_positions (updated_at DESC)`,
+  )
+}
+
 async function ensureCuratedPlacesTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS curated_places (
@@ -396,6 +426,7 @@ export async function ensureAuthSchemaPatches(): Promise<void> {
   if (!t.rows[0]?.ok) return
   await ensureMapIconColumn()
   await ensureTollVehicleClassColumn()
+  await ensureMapPoisAndLivePresenceTables()
   const g = await pool.query<{ ok: boolean }>(
     `SELECT EXISTS (
        SELECT 1 FROM information_schema.tables
