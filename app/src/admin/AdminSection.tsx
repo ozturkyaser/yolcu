@@ -7,6 +7,8 @@ import { AdminUsersPage } from './AdminUsersPage'
 import { AdminVignetteOrdersPage } from './AdminVignetteOrdersPage'
 import { AdminVignetteProductsPage } from './AdminVignetteProductsPage'
 import { AdminPaymentSettingsPage } from './AdminPaymentSettingsPage'
+import { AdminRadioChannelsPage } from './AdminRadioChannelsPage'
+import { AdminPromotionsPage } from './AdminPromotionsPage'
 
 const navCls = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-3 py-2 text-sm font-bold ${isActive ? 'bg-primary text-on-primary' : 'text-on-surface hover:bg-surface-container-high'}`
@@ -59,6 +61,12 @@ export function AdminSection() {
           <NavLink to="/admin/payments" className={navCls}>
             Zahlungen
           </NavLink>
+          <NavLink to="/admin/radio" className={navCls}>
+            Radio
+          </NavLink>
+          <NavLink to="/admin/promotions" className={navCls}>
+            Werbung
+          </NavLink>
         </nav>
       </aside>
       <main className="min-h-0 flex-1 overflow-y-auto p-4 pb-16">
@@ -70,6 +78,8 @@ export function AdminSection() {
           <Route path="vignettes/products" element={<AdminVignetteProductsPage />} />
           <Route path="vignettes/orders" element={<AdminVignetteOrdersPage />} />
           <Route path="payments" element={<AdminPaymentSettingsPage />} />
+          <Route path="radio" element={<AdminRadioChannelsPage />} />
+          <Route path="promotions" element={<AdminPromotionsPage />} />
         </Routes>
       </main>
     </div>

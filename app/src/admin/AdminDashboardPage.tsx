@@ -13,6 +13,7 @@ export function AdminDashboardPage() {
     rideRequests: number
     vignetteProducts?: number
     vignetteOrders?: number
+    promotionCampaigns?: number
   } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -37,6 +38,7 @@ export function AdminDashboardPage() {
         { label: 'Mitfahrt-Anfragen', value: stats.rideRequests, to: '/admin/rides' },
         { label: 'Vignetten-Produkte', value: stats.vignetteProducts ?? 0, to: '/admin/vignettes/products' },
         { label: 'Vignetten-Bestellungen', value: stats.vignetteOrders ?? 0, to: '/admin/vignettes/orders' },
+        { label: 'Werbe-Kampagnen', value: stats.promotionCampaigns ?? 0, to: '/admin/promotions' },
       ]
     : []
 

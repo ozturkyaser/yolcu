@@ -113,7 +113,28 @@ export type PostDto = {
   /** Strukturierte Grenz-Meldung (Kategorie border) */
   borderWaitMinutes: number | null
   borderSlug: string | null
-  author: { id: string; displayName: string }
+  mediaKind?: 'image' | 'video' | null
+  /** Relativ `/api/posts/…/media` – mit `postMediaSrc` für Capacitor absolut machen */
+  mediaUrl?: string | null
+  author: { id: string; displayName: string; mapIcon?: string }
+}
+
+/** Bild/Video-URL für <img>/<video> (lokal oder VITE_API_BASE_URL). */
+export function postMediaSrc(mediaUrl: string | null | undefined): string | null {
+  if (!mediaUrl) return null
+  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+    return `${raw.trim().replace(/\/$/, '')}${mediaUrl}`
+  }
+  return mediaUrl
+}
+
+export async function createPostWithMedia(token: string, formData: FormData) {
+  return apiFetch<{ post: PostDto }>('/posts/with-media', {
+    method: 'POST',
+    token,
+    body: formData,
+  })
 }
 
 export type VehicleDto = {
@@ -669,7 +690,14 @@ export async function patchRideRequest(
   })
 }
 
-export type CuratedPlaceCategory = 'accommodation' | 'restaurant' | 'rest_area'
+export type CuratedPlaceCategory =
+  | 'accommodation'
+  | 'restaurant'
+  | 'rest_area'
+  | 'workshop'
+  | 'border'
+
+export type SilaRouteCodeFilter = 'A_NORTH' | 'B_WEST' | 'C_SOUTH' | 'COMMON'
 
 export type CuratedPlaceDto = {
   id: string
@@ -685,13 +713,17 @@ export type CuratedPlaceDto = {
   imageUrl: string
   isPublished: boolean
   sortOrder: number
+  routeCode: SilaRouteCodeFilter | null
   createdAt: string
   updatedAt: string
 }
 
-export async function fetchCuratedPlaces(category?: CuratedPlaceCategory) {
-  const q = category ? `?category=${encodeURIComponent(category)}` : ''
-  return apiFetch<{ places: CuratedPlaceDto[] }>(`/curated-places${q}`)
+export async function fetchCuratedPlaces(opts?: { category?: CuratedPlaceCategory; route?: SilaRouteCodeFilter }) {
+  const p = new URLSearchParams()
+  if (opts?.category) p.set('category', opts.category)
+  if (opts?.route) p.set('route', opts.route)
+  const qs = p.toString()
+  return apiFetch<{ places: CuratedPlaceDto[] }>(`/curated-places${qs ? `?${qs}` : ''}`)
 }
 
 export async function fetchAdminStats(token: string) {
@@ -704,6 +736,7 @@ export async function fetchAdminStats(token: string) {
       rideRequests: number
       vignetteProducts?: number
       vignetteOrders?: number
+      promotionCampaigns?: number
     }
   }>('/admin/stats', { token })
 }
@@ -795,6 +828,7 @@ export async function createAdminCuratedPlace(
     imageUrl?: string
     isPublished?: boolean
     sortOrder?: number
+    routeCode?: SilaRouteCodeFilter | null
   },
 ) {
   return apiFetch<{ place: CuratedPlaceDto }>('/admin/curated-places', {
@@ -813,6 +847,7 @@ export async function createAdminCuratedPlace(
       imageUrl: body.imageUrl ?? '',
       isPublished: body.isPublished ?? true,
       sortOrder: body.sortOrder ?? 0,
+      routeCode: body.routeCode ?? null,
     }),
   })
 }
@@ -833,6 +868,7 @@ export async function patchAdminCuratedPlace(
     imageUrl: string
     isPublished: boolean
     sortOrder: number
+    routeCode: SilaRouteCodeFilter | null
   }>,
 ) {
   return apiFetch<{ place: CuratedPlaceDto }>(`/admin/curated-places/${id}`, {
@@ -1055,4 +1091,161 @@ export async function patchAdminVignetteOrderRequest(
     token,
     body: JSON.stringify(body),
   })
+}
+
+export type RadioChannelDto = {
+  id: string
+  name: string
+  streamUrl: string
+  sortOrder: number
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchRadioChannels() {
+  return apiFetch<{ channels: RadioChannelDto[] }>('/radio/channels')
+}
+
+export async function fetchAdminRadioChannels(token: string) {
+  return apiFetch<{ channels: RadioChannelDto[] }>('/admin/radio/channels', { token })
+}
+
+export async function createAdminRadioChannel(
+  token: string,
+  body: { name: string; streamUrl: string; sortOrder?: number; enabled?: boolean },
+) {
+  return apiFetch<{ channel: RadioChannelDto }>('/admin/radio/channels', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function patchAdminRadioChannel(
+  token: string,
+  id: string,
+  body: Partial<{ name: string; streamUrl: string; sortOrder: number; enabled: boolean }>,
+) {
+  return apiFetch<{ channel: RadioChannelDto }>(`/admin/radio/channels/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteAdminRadioChannel(token: string, id: string) {
+  return apiFetch<{ ok: boolean }>(`/admin/radio/channels/${id}`, { method: 'DELETE', token })
+}
+
+export type ActivePromotionDto = {
+  id: string
+  headline: string
+  body: string
+  imageUrl: string
+  ctaLabel: string
+  ctaUrl: string
+  startsAt: string
+  endsAt: string
+}
+
+export async function fetchActivePromotion(lang: 'de' | 'tr' | 'en') {
+  return apiFetch<{ promotion: ActivePromotionDto | null }>(`/promotions/active?lang=${encodeURIComponent(lang)}`)
+}
+
+export async function trackPromotionImpression(id: string) {
+  return apiFetch<{ ok: boolean }>(`/promotions/${id}/impression`, { method: 'POST' })
+}
+
+export async function trackPromotionClick(id: string) {
+  return apiFetch<{ ok: boolean; ctaUrl: string }>(`/promotions/${id}/click`, { method: 'POST' })
+}
+
+export type PromotionCampaignAdminDto = {
+  id: string
+  internalName: string
+  headlineDe: string
+  headlineTr: string
+  headlineEn: string
+  bodyDe: string
+  bodyTr: string
+  bodyEn: string
+  imageUrl: string
+  ctaLabelDe: string
+  ctaLabelTr: string
+  ctaLabelEn: string
+  ctaUrl: string
+  startsAt: string
+  endsAt: string
+  isActive: boolean
+  priority: number
+  impressionCount: number
+  clickCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchAdminPromotions(token: string) {
+  return apiFetch<{ campaigns: PromotionCampaignAdminDto[] }>('/admin/promotions', { token })
+}
+
+export async function createAdminPromotion(
+  token: string,
+  body: {
+    internalName: string
+    headlineDe?: string
+    headlineTr?: string
+    headlineEn?: string
+    bodyDe?: string
+    bodyTr?: string
+    bodyEn?: string
+    imageUrl?: string
+    ctaLabelDe?: string
+    ctaLabelTr?: string
+    ctaLabelEn?: string
+    ctaUrl: string
+    startsAt: string
+    endsAt: string
+    isActive?: boolean
+    priority?: number
+  },
+) {
+  return apiFetch<{ campaign: PromotionCampaignAdminDto }>('/admin/promotions', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function patchAdminPromotion(
+  token: string,
+  id: string,
+  body: Partial<{
+    internalName: string
+    headlineDe: string
+    headlineTr: string
+    headlineEn: string
+    bodyDe: string
+    bodyTr: string
+    bodyEn: string
+    imageUrl: string
+    ctaLabelDe: string
+    ctaLabelTr: string
+    ctaLabelEn: string
+    ctaUrl: string
+    startsAt: string
+    endsAt: string
+    isActive: boolean
+    priority: number
+  }>,
+) {
+  return apiFetch<{ campaign: PromotionCampaignAdminDto }>(`/admin/promotions/${id}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteAdminPromotion(token: string, id: string) {
+  return apiFetch<{ ok: boolean }>(`/admin/promotions/${id}`, { method: 'DELETE', token })
 }

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pool } from './pool.js'
+import { seedCommunityDemoPostsIfEmpty } from './seedCommunityDemo.js'
+import { seedTurkeyRouteCsvCuratedPlaces } from './seedTurkeyRouteCsvPois.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -96,7 +98,7 @@ async function ensureCuratedPlacesTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS curated_places (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area')),
+      category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area', 'workshop', 'border')),
       name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
       description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 4000),
       lat DOUBLE PRECISION NOT NULL,
@@ -108,6 +110,9 @@ async function ensureCuratedPlacesTable(): Promise<void> {
       image_url TEXT NOT NULL DEFAULT '' CHECK (char_length(image_url) <= 800),
       is_published BOOLEAN NOT NULL DEFAULT true,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      route_code TEXT CHECK (
+        route_code IS NULL OR route_code IN ('A_NORTH', 'B_WEST', 'C_SOUTH', 'COMMON')
+      ),
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -117,6 +122,65 @@ async function ensureCuratedPlacesTable(): Promise<void> {
   )
   await pool.query(
     `CREATE INDEX IF NOT EXISTS curated_places_published_sort_idx ON curated_places (is_published, sort_order DESC, created_at DESC)`,
+  )
+  /** route_code-Index erst in ensureCuratedPlacesSilaColumns (Spalte fehlt auf Alt-DBs). */
+}
+
+/** Bestehende DBs: Kategorien + route_code nachziehen (idempotent). */
+async function ensureCuratedPlacesSilaColumns(): Promise<void> {
+  const t = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'curated_places'
+     ) AS ok`,
+  )
+  if (!t.rows[0]?.ok) return
+
+  await pool.query(`ALTER TABLE curated_places ADD COLUMN IF NOT EXISTS route_code TEXT`)
+  await pool.query(`ALTER TABLE curated_places DROP CONSTRAINT IF EXISTS curated_places_route_code_check`)
+  await pool.query(`
+    ALTER TABLE curated_places ADD CONSTRAINT curated_places_route_code_check CHECK (
+      route_code IS NULL OR route_code IN ('A_NORTH', 'B_WEST', 'C_SOUTH', 'COMMON')
+    )
+  `)
+  await pool.query(`ALTER TABLE curated_places DROP CONSTRAINT IF EXISTS curated_places_category_check`)
+  await pool.query(`
+    ALTER TABLE curated_places ADD CONSTRAINT curated_places_category_check CHECK (
+      category IN ('accommodation', 'restaurant', 'rest_area', 'workshop', 'border')
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS curated_places_route_code_idx ON curated_places (route_code) WHERE route_code IS NOT NULL`)
+}
+
+async function seedBerlinTurkeyRouteFaqExtras(): Promise<void> {
+  const kb = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'kb_route_faq'
+     ) AS ok`,
+  )
+  if (!kb.rows[0]?.ok) return
+  await pool.query(
+    `INSERT INTO kb_route_faq (id, corridor, question, answer, tags, source_url)
+     VALUES
+       ('berlin-tr-04', 'berlin_turkey', 'Welche Hauptrouten führen in die Türkei (Sıla)?',
+        'Drei typische Varianten: Nord über CZ/SK/AT/HU, West über AT/HU ab Passau, Süd über AT/SI/HR (kürzer, aber mehr Grenzen). Ab Belgrad verlaufen alle über Serbien, Bulgarien und den Grenzübergang Kapıkule/Kapitan Andreevo nach Edirne und weiter nach Istanbul.',
+        ARRAY['route','planning'], null),
+       ('berlin-tr-05', 'berlin_turkey', 'Warum kann es an Kapıkule so lange dauern?',
+        'Kapıkule (BG–TR) ist die meistbefahrene PKW-Lkw-Grenze – in Hochsaison sind mehrstündige Wartezeiten möglich. Tipp: Zeitpuffer einplanen, Verpflegung dabei haben, offizielle Wartebereiche nutzen und auf Betrüger an Parkplätzen achten.',
+        ARRAY['border','kapikule','timing'], null),
+       ('berlin-tr-06', 'berlin_turkey', 'Grenze Kroatien–Serbien (Batrovci) vs. Ungarn–Serbien (Horgoš)?',
+        'Beide können je nach Saison und Tageszeit stark belastet sein. Batrovci (Route über HR) und Horgoš/Röszke (Route über HU) sind bekannte Engpässe – Alternativrouten sind oft länger; aktuelle Staus in Community oder Navigations-Apps prüfen.',
+        ARRAY['border','routing'], null),
+       ('berlin-tr-07', 'berlin_turkey', 'Wo tanken vor der teureren Strecke?',
+        'Vor Einreise in die Türkei lohnt sich oft Tanken in Bulgarien oder Serbien (Preise beobachten). In der App kannst du kuratierte Tank-/Rastorte entlang der Route anzeigen lassen.',
+        ARRAY['fuel','planning'], null)
+     ON CONFLICT (id) DO UPDATE SET
+       question = EXCLUDED.question,
+       answer = EXCLUDED.answer,
+       tags = EXCLUDED.tags,
+       source_url = EXCLUDED.source_url,
+       verified_at = now()`,
   )
 }
 
@@ -231,6 +295,87 @@ async function seedCuratedPlacesIfEmpty(): Promise<void> {
   )
 }
 
+/**
+ * Strategische Stops Sıla-Route (Europa → Istanbul): idempotent per fester UUID.
+ * Läuft auch wenn bereits Berlin-Demo-POIs existieren.
+ */
+async function seedSilaStrategicCuratedPlaces(): Promise<void> {
+  const t = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'curated_places'
+     ) AS ok`,
+  )
+  if (!t.rows[0]?.ok) return
+  const col = await pool.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'curated_places' AND column_name = 'route_code'`,
+  )
+  if ((col.rows[0]?.c ?? 0) < 1) return
+
+  await pool.query(
+    `INSERT INTO curated_places (
+       id, category, name, description, lat, lng, address, region, phone, website, image_url,
+       is_published, sort_order, route_code
+     )
+     VALUES
+       ('c2a10000-0001-4000-8000-000000000001', 'rest_area', 'Dresden Autohof (A4, Richtung CZ)',
+        'Typischer Stopp Route Nord vor Tschechien: tanken, kurze Pause, oft 24/7-Bereiche in der Nähe der A4.', 51.0504, 13.7373,
+        'A4 Umfeld', 'Deutschland', '', '', '', true, 88, 'A_NORTH'),
+       ('c2a10000-0001-4000-8000-000000000002', 'rest_area', 'Würzburg Autohof (A3)',
+        'Beliebter Pausepunkt Route West Richtung Nürnberg/Passau; vor AT ggf. tanken (Preise vergleichen).', 49.7913, 9.9534,
+        'A3', 'Deutschland', '', '', '', true, 87, 'B_WEST'),
+       ('c2a10000-0001-4000-8000-000000000003', 'rest_area', 'Rosenheim Autohof (A8)',
+        'Klassischer Stopp Route Süd kurz vor Grenze Walserberg / Österreich.', 47.8516, 12.1289,
+        'A8', 'Deutschland', '', '', '', true, 86, 'C_SOUTH'),
+       ('c2a10000-0001-4000-8000-000000000004', 'restaurant', 'Wien – Übernachtung / türkische Gastronomie',
+        'Großer Stopp: z. B. Favoriten (10. Bez.) oder Brunnenmarkt Ottakring – viele türkische Lokale; Autobahn Umfahrung A23/S1 beachten.', 48.2082, 16.3738,
+        'Stadtgebiet', 'Österreich', '', '', '', true, 85, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000005', 'accommodation', 'Budapest – Übernachtung vor dem Balkan',
+        'Letzter EU-Großstadt-Stopp mit gutem Preis-Leistungs-Verhältnis; M0-Ring / MOL-Tankstellen für Route planen.', 47.4979, 19.0402,
+        'Zentrum / Ring', 'Ungarn', '', '', '', true, 84, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000006', 'rest_area', 'Szeged – letzter HU-Stopp vor RS',
+        'Oft günstiger tanken als weiter südlich; Grenze Röszke/Horgoš kann in Hochsaison stark sein – Zeitpuffer.', 46.253, 20.1414,
+        'M5 Umfeld', 'Ungarn', '', '', '', true, 83, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000007', 'accommodation', 'Zagreb – Übernachtung (nur Route Süd)',
+        'Empfohlener Etappenstopp auf der kürzeren Variante über HR; Maut Kroatien einplanen.', 45.815, 15.9819,
+        'Stadt', 'Kroatien', '', '', '', true, 82, 'C_SOUTH'),
+       ('c2a10000-0001-4000-8000-000000000008', 'rest_area', 'Belgrad – Korridor-X-Treffpunkt',
+        'Etwa Streckenmitte: alle drei Varianten laufen hier zusammen; Maut Serbien an Zapfstellen bezahlen.', 44.8176, 20.4569,
+        'Autobahn-Umfahrung A1/A4', 'Serbien', '', '', '', true, 81, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000009', 'restaurant', 'Niš – Stopp vor Bulgarien',
+        'Historische Stadt, gute Übernachtungs- und Essensoptionen; klassischer Wegpunkt vor Grenze RS–BG.', 43.3209, 21.8958,
+        'Zentrum / E80', 'Serbien', '', '', '', true, 80, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000010', 'workshop', 'Sofia – Werkstätten (Ausfall Richtung TR)',
+        'Entlang Tsarigradsko Shose u. a. Mehrmarken- und Vertragswerkstätten; bei Panne vorab telefonisch klären.', 42.6977, 23.3219,
+        'Ost / Ring', 'Bulgarien', '', '', '', true, 79, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000011', 'rest_area', 'Svilengrad – letzter BG-Stopp vor TR',
+        'Kurz vor der Grenze: Hotels für Wartezeiten bekannt; Tanken oft noch günstiger als in TR.', 41.7693, 26.2073,
+        'A4 / Grenznähe', 'Bulgarien', '', '', '', true, 78, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000012', 'border', 'Kapıkule / Kapitan Andreevo (BG–TR)',
+        'Hauptgrenze: in Hochsaison sehr lange Wartezeiten möglich – Verpflegung, Zeitpuffer, nur offizielle Bereiche.', 41.7167, 26.3333,
+        'Grenzübergang', 'BG / TR', '', '', '', true, 77, 'COMMON'),
+       ('c2a10000-0001-4000-8000-000000000013', 'restaurant', 'Edirne – Köfte & erste TR-Versorgung',
+        'Erster größerer TR-Stopp nach der Grenze: Selimiye, Köfte-Lokale; HGS/OGS für Maut nicht vergessen.', 41.6771, 26.5557,
+        'Zentrum', 'Türkiye', '', '', '', true, 76, 'COMMON')
+     ON CONFLICT (id) DO UPDATE SET
+       category = EXCLUDED.category,
+       name = EXCLUDED.name,
+       description = EXCLUDED.description,
+       lat = EXCLUDED.lat,
+       lng = EXCLUDED.lng,
+       address = EXCLUDED.address,
+       region = EXCLUDED.region,
+       phone = EXCLUDED.phone,
+       website = EXCLUDED.website,
+       image_url = EXCLUDED.image_url,
+       is_published = EXCLUDED.is_published,
+       sort_order = EXCLUDED.sort_order,
+       route_code = EXCLUDED.route_code,
+       updated_at = now()`,
+  )
+}
+
 async function ensureRideShareMarketplaceTables(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ride_listings (
@@ -285,6 +430,69 @@ async function ensureAssistantMemoryTable(): Promise<void> {
   `)
   await pool.query(
     `CREATE INDEX IF NOT EXISTS assistant_memory_group_created_idx ON assistant_memory (group_id, created_at DESC)`,
+  )
+}
+
+async function ensurePostMediaColumns(): Promise<void> {
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_kind TEXT`)
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_storage_key TEXT`)
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_mime TEXT`)
+  await pool.query(`ALTER TABLE posts ALTER COLUMN body SET DEFAULT ''`)
+  await pool.query(`ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_need_content`)
+  await pool.query(`
+    ALTER TABLE posts ADD CONSTRAINT posts_need_content CHECK (
+      char_length(trim(body)) >= 1 OR (media_storage_key IS NOT NULL AND char_length(trim(media_storage_key)) >= 1)
+    )
+  `)
+}
+
+/** Vollbild-/Overlay-Werbung: Zeitfenster, Mehrsprache, Klick- & Impressionszähler. */
+async function ensurePromotionCampaignsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS promotion_campaigns (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      internal_name TEXT NOT NULL CHECK (char_length(internal_name) >= 1 AND char_length(internal_name) <= 160),
+      headline_de TEXT NOT NULL DEFAULT '' CHECK (char_length(headline_de) <= 240),
+      headline_tr TEXT NOT NULL DEFAULT '' CHECK (char_length(headline_tr) <= 240),
+      headline_en TEXT NOT NULL DEFAULT '' CHECK (char_length(headline_en) <= 240),
+      body_de TEXT NOT NULL DEFAULT '' CHECK (char_length(body_de) <= 1200),
+      body_tr TEXT NOT NULL DEFAULT '' CHECK (char_length(body_tr) <= 1200),
+      body_en TEXT NOT NULL DEFAULT '' CHECK (char_length(body_en) <= 1200),
+      image_url TEXT NOT NULL DEFAULT '' CHECK (char_length(image_url) <= 800),
+      cta_label_de TEXT NOT NULL DEFAULT '' CHECK (char_length(cta_label_de) <= 160),
+      cta_label_tr TEXT NOT NULL DEFAULT '' CHECK (char_length(cta_label_tr) <= 160),
+      cta_label_en TEXT NOT NULL DEFAULT '' CHECK (char_length(cta_label_en) <= 160),
+      cta_url TEXT NOT NULL CHECK (char_length(cta_url) >= 8 AND char_length(cta_url) <= 800),
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      priority INTEGER NOT NULL DEFAULT 0,
+      impression_count BIGINT NOT NULL DEFAULT 0,
+      click_count BIGINT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT promotion_campaigns_time_check CHECK (ends_at > starts_at)
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS promotion_campaigns_window_idx ON promotion_campaigns (is_active, starts_at, ends_at, priority DESC)`,
+  )
+}
+
+async function ensureRadioChannelsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS radio_channels (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
+      stream_url TEXT NOT NULL CHECK (char_length(stream_url) >= 8 AND char_length(stream_url) <= 2000),
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS radio_channels_enabled_sort_idx ON radio_channels (enabled, sort_order DESC, name ASC)`,
   )
 }
 
@@ -375,6 +583,7 @@ async function seedBerlinTurkeyKnowledgeBase(): Promise<void> {
        source_url = EXCLUDED.source_url,
        verified_at = now()`,
   )
+  await seedBerlinTurkeyRouteFaqExtras()
 }
 
 async function ensureVoiceMessageColumns(): Promise<void> {
@@ -437,10 +646,17 @@ export async function ensureAuthSchemaPatches(): Promise<void> {
   await ensureRideShareMarketplaceTables()
   await ensureUserRoleColumn()
   await ensureCuratedPlacesTable()
+  await ensureCuratedPlacesSilaColumns()
   await seedCuratedPlacesIfEmpty()
+  await seedSilaStrategicCuratedPlaces()
+  await seedTurkeyRouteCsvCuratedPlaces()
   await ensureVignetteServiceTables()
   await ensureVignetteOrderPaymentColumns()
   await seedVignetteServiceProductsIfEmpty()
+  await ensureRadioChannelsTable()
+  await ensurePostMediaColumns()
+  await ensurePromotionCampaignsTable()
+  await seedBerlinTurkeyRouteFaqExtras()
 }
 
 export async function runMigrations(): Promise<void> {
@@ -455,10 +671,16 @@ export async function runMigrations(): Promise<void> {
   await ensureRideShareMarketplaceTables()
   await ensureUserRoleColumn()
   await ensureCuratedPlacesTable()
+  await ensureCuratedPlacesSilaColumns()
   await seedCuratedPlacesIfEmpty()
+  await seedSilaStrategicCuratedPlaces()
+  await seedTurkeyRouteCsvCuratedPlaces()
   await ensureVignetteServiceTables()
   await ensureVignetteOrderPaymentColumns()
   await seedVignetteServiceProductsIfEmpty()
+  await ensureRadioChannelsTable()
+  await ensurePostMediaColumns()
+  await ensurePromotionCampaignsTable()
   await seedBerlinTurkeyKnowledgeBase()
 
   await pool.query(
@@ -494,4 +716,6 @@ export async function runMigrations(): Promise<void> {
      )
      ON CONFLICT (email) DO NOTHING`,
   )
+
+  await seedCommunityDemoPostsIfEmpty()
 }

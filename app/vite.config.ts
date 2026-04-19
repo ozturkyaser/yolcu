@@ -44,8 +44,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Yol Arkadaşım',
-        short_name: 'Yol Arkadaşım',
+        name: 'Yol – Reise & Community',
+        short_name: 'Yol',
         description: 'Karte, Gruppen und Routen für unterwegs.',
         theme_color: '#003f87',
         background_color: '#003f87',

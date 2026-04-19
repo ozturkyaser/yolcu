@@ -13,9 +13,20 @@ import {
 } from '../lib/api'
 import { MAP_MAP_ICON_OPTIONS, normalizeMapIconId, type MapMapIconId } from '../lib/mapIcons'
 import { useAuth } from '../context/AuthContext'
+import { useI18n } from '../i18n/I18nContext'
+import type { Lang } from '../i18n/strings'
+
+const BOTTOM_NAV = 'var(--bottom-nav-height, 5.75rem)'
+
+function localeForLang(lang: string) {
+  if (lang === 'tr') return 'tr-TR'
+  if (lang === 'en') return 'en-GB'
+  return 'de-DE'
+}
 
 export function ProfilePage() {
   const { token, user, loading: authLoading, logout, refreshMe } = useAuth()
+  const { t, lang, setLang } = useI18n()
   const [searchParams, setSearchParams] = useSearchParams()
   const [vehicles, setVehicles] = useState<VehicleDto[]>([])
   const [displayName, setDisplayName] = useState('')
@@ -32,6 +43,7 @@ export function ProfilePage() {
   const [vignettePayBusy, setVignettePayBusy] = useState<string | null>(null)
 
   const searchQuery = useMemo(() => searchParams.toString(), [searchParams])
+  const loc = localeForLang(lang)
 
   useEffect(() => {
     if (!token) {
@@ -54,12 +66,12 @@ export function ProfilePage() {
           setVTrailer(primary.trailer_mode)
         }
       } catch {
-        setMsg('Profil konnte nicht geladen werden.')
+        setMsg(t('profile_load_error'))
       } finally {
         setLoading(false)
       }
     })()
-  }, [token])
+  }, [token, t])
 
   useEffect(() => {
     if (!token) {
@@ -90,12 +102,12 @@ export function ProfilePage() {
       try {
         await confirmVignetteStripeCheckout(token, sessionId)
         if (!cancelled) {
-          setMsg('Zahlung bestätigt – vielen Dank!')
+          setMsg(t('profile_checkout_ok'))
           const { requests } = await fetchMyVignetteOrderRequests(token)
           setVignetteOrders(requests)
         }
       } catch (e) {
-        if (!cancelled) setMsg(e instanceof Error ? e.message : 'Zahlungsbestätigung fehlgeschlagen.')
+        if (!cancelled) setMsg(e instanceof Error ? e.message : t('profile_checkout_fail'))
       } finally {
         if (!cancelled) {
           const next = new URLSearchParams(searchQuery)
@@ -108,7 +120,7 @@ export function ProfilePage() {
     return () => {
       cancelled = true
     }
-  }, [token, searchQuery, setSearchParams])
+  }, [token, searchQuery, setSearchParams, t])
 
   useEffect(() => {
     const params = new URLSearchParams(searchQuery)
@@ -121,12 +133,12 @@ export function ProfilePage() {
       try {
         await confirmVignettePaypalCheckout(token, paypalOrderId)
         if (!cancelled) {
-          setMsg('PayPal-Zahlung bestätigt – vielen Dank!')
+          setMsg(t('profile_checkout_ok_paypal'))
           const { requests } = await fetchMyVignetteOrderRequests(token)
           setVignetteOrders(requests)
         }
       } catch (e) {
-        if (!cancelled) setMsg(e instanceof Error ? e.message : 'PayPal-Bestätigung fehlgeschlagen.')
+        if (!cancelled) setMsg(e instanceof Error ? e.message : t('profile_checkout_fail_paypal'))
       } finally {
         if (!cancelled) {
           const next = new URLSearchParams(searchQuery)
@@ -140,34 +152,41 @@ export function ProfilePage() {
     return () => {
       cancelled = true
     }
-  }, [token, searchQuery, setSearchParams])
+  }, [token, searchQuery, setSearchParams, t])
 
   useEffect(() => {
     const params = new URLSearchParams(searchQuery)
     const v = params.get('vignetteCheckout')
     if (v !== 'cancel' && v !== 'paypal_cancel') return
-    setMsg(v === 'paypal_cancel' ? 'PayPal abgebrochen.' : 'Zahlung abgebrochen.')
+    setMsg(v === 'paypal_cancel' ? t('profile_checkout_paypal_cancel') : t('profile_checkout_cancel'))
     params.delete('vignetteCheckout')
     params.delete('token')
     params.delete('PayerID')
     setSearchParams(params, { replace: true })
-  }, [searchQuery, setSearchParams])
+  }, [searchQuery, setSearchParams, t])
 
   if (authLoading || (token && loading)) {
     return (
-      <main className="flex min-h-[40dvh] items-center justify-center text-on-surface-variant">Laden…</main>
+      <main className="flex min-h-[40dvh] items-center justify-center text-on-surface-variant">{t('profile_loading')}</main>
     )
   }
 
   if (!token || !user) {
     return (
-      <main className="mx-auto max-w-md px-6 py-16 text-center">
-        <p className="mb-6 text-on-surface-variant">Bitte anmelden, um dein Profil zu sehen.</p>
+      <main
+        className="mx-auto flex min-h-[50dvh] max-w-lg flex-col items-center justify-center px-6 text-center"
+        style={{ paddingBottom: `calc(${BOTTOM_NAV} + 1rem)` }}
+      >
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-surface-container-high ring-1 ring-outline-variant/40">
+          <span className="material-symbols-outlined text-4xl text-on-surface-variant">person</span>
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-on-surface">{t('profile_guest_title')}</h1>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-on-surface-variant">{t('profile_guest_hint')}</p>
         <Link
           to="/login"
-          className="inline-block rounded-xl bg-primary px-8 py-3 font-bold text-on-primary"
+          className="mt-8 inline-flex rounded-full bg-on-surface px-8 py-3 text-sm font-semibold text-surface shadow-md transition active:scale-[0.98]"
         >
-          Anmelden
+          {t('profile_guest_cta')}
         </Link>
       </main>
     )
@@ -199,7 +218,7 @@ export function ProfilePage() {
         })
         setVehicles([r.vehicle])
       }
-      setMsg('Gespeichert.')
+      setMsg(t('profile_saved'))
       await refreshMe()
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Fehler')
@@ -211,69 +230,113 @@ export function ProfilePage() {
   const primary = vehicles.find((x) => x.is_primary) ?? vehicles[0]
 
   return (
-    <main className="mx-auto max-w-4xl px-6 pb-28 pt-2">
+    <main
+      className="mx-auto max-w-lg px-4 pt-2"
+      style={{ paddingBottom: `calc(${BOTTOM_NAV} + 0.75rem)` }}
+    >
       {msg ? (
-        <div className="mb-4 rounded-xl bg-surface-container-low p-3 text-sm font-medium text-on-surface">{msg}</div>
+        <div className="mb-4 rounded-2xl border border-outline-variant/40 bg-primary-container/25 px-4 py-3 text-sm font-medium text-on-surface">
+          {msg}
+        </div>
       ) : null}
 
-      <section className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-12">
-        <div className="flex flex-col items-center md:col-span-4 md:items-start">
-          <div className="mb-4 flex h-32 w-32 items-center justify-center overflow-hidden rounded-full bg-primary-container text-4xl font-black text-on-primary ring-4 ring-primary-container shadow-2xl">
-            {user.displayName.slice(0, 1).toUpperCase()}
+      <section className="mb-6 overflow-hidden rounded-3xl border border-outline-variant/30 bg-gradient-to-br from-surface-container-low to-surface-container-lowest shadow-sm">
+        <div className="px-5 pb-5 pt-6">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+            <div className="relative">
+              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-container text-3xl font-bold text-on-primary shadow-lg ring-4 ring-white/30 dark:ring-black/20">
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full bg-surface shadow-md ring-2 ring-outline-variant/30">
+                <span
+                  className="material-symbols-outlined text-xl text-primary"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  {normalizeMapIconId(mapIcon)}
+                </span>
+              </div>
+            </div>
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <h1 className="text-2xl font-semibold tracking-tight text-on-surface">{user.displayName}</h1>
+              <p className="mt-1 text-xs text-on-surface-variant">{user.email}</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                {user.role === 'admin' ? (
+                  <Link
+                    to="/admin"
+                    className="inline-flex items-center gap-1 rounded-full bg-inverse-surface px-3 py-1.5 text-xs font-semibold text-inverse-on-surface"
+                  >
+                    <span className="material-symbols-outlined text-sm">admin_panel_settings</span>
+                    {t('profile_admin_link')}
+                  </Link>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="rounded-full border border-outline-variant/50 px-3 py-1.5 text-xs font-semibold text-error"
+                >
+                  {t('profile_logout')}
+                </button>
+              </div>
+            </div>
           </div>
-          <h2 className="font-sans text-2xl font-extrabold tracking-tight">{user.displayName}</h2>
-          <p className="font-sans text-xs uppercase tracking-widest text-on-surface-variant">{user.email}</p>
-          {user.role === 'admin' ? (
-            <Link
-              to="/admin"
-              className="mt-3 inline-flex items-center justify-center rounded-xl bg-inverse-surface px-4 py-2 text-xs font-black uppercase tracking-wide text-inverse-on-surface"
-            >
-              Admin-Panel
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            onClick={logout}
-            className="mt-4 text-sm font-bold text-error"
-          >
-            Abmelden
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-4 md:col-span-8">
-          <div className="flex flex-col justify-center rounded-xl bg-surface-container-low p-6">
-            <span className="mb-1 font-sans text-[0.75rem] font-medium uppercase tracking-wide text-on-surface-variant">
-              Toplam Mesafe
-            </span>
-            <span className="font-sans text-4xl font-bold text-primary">
-              {user.statsKm.toLocaleString('de-DE')}
-              <span className="ml-1 text-xl font-medium">km</span>
-            </span>
-          </div>
-          <div className="flex flex-col justify-center rounded-xl bg-surface-container-low p-6">
-            <span className="mb-1 font-sans text-[0.75rem] font-medium uppercase tracking-wide text-on-surface-variant">
-              Keşfedilen Bölge
-            </span>
-            <span className="font-sans text-4xl font-bold text-primary">
-              {user.statsRegions}
-              <span className="ml-1 text-xl font-medium">Bölge</span>
-            </span>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-surface/80 px-4 py-3 ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-on-surface-variant">
+                {t('profile_stats_km')}
+              </p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-primary">
+                {user.statsKm.toLocaleString(loc)}
+                <span className="ml-1 text-sm font-medium text-on-surface-variant">{t('profile_stats_km_unit')}</span>
+              </p>
+            </div>
+            <div className="rounded-2xl bg-surface/80 px-4 py-3 ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-on-surface-variant">
+                {t('profile_stats_regions')}
+              </p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-primary">
+                {user.statsRegions}
+                <span className="ml-1 text-sm font-medium text-on-surface-variant">
+                  {t('profile_stats_regions_unit')}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mb-8 rounded-2xl bg-surface-container-low p-6">
-        <h3 className="mb-4 font-sans text-lg font-bold text-primary">Profil bearbeiten</h3>
-        <label className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Anzeigename</label>
+      <section className="mb-5 rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-on-surface">{t('profile_lang_title')}</h2>
+        <p className="mt-1 text-sm text-on-surface-variant">{t('profile_lang_hint')}</p>
+        <label className="sr-only" htmlFor="profile-lang">
+          {t('langLabel')}
+        </label>
+        <select
+          id="profile-lang"
+          value={lang}
+          onChange={(e) => setLang(e.target.value as Lang)}
+          className="mt-4 w-full rounded-2xl border border-outline-variant/40 bg-surface px-3 py-3 text-sm font-semibold"
+        >
+          <option value="de">{t('langOptionDe')}</option>
+          <option value="tr">{t('langOptionTr')}</option>
+          <option value="en">{t('langOptionEn')}</option>
+        </select>
+      </section>
+
+      <section className="mb-5 rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-on-surface">{t('profile_section_edit')}</h2>
+        <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          {t('profile_display_name')}
+        </label>
         <input
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          className="mb-6 w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2"
+          className="mt-1.5 w-full rounded-2xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm"
         />
-        <p className="mb-2 text-xs font-bold uppercase text-on-surface-variant">Icon auf der Karte</p>
-        <p className="mb-3 text-xs text-on-surface-variant">
-          So erscheinst du anderen, die die Karte nutzen (wenn du deine Position teilst).
+        <p className="mt-5 text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          {t('profile_map_icon_title')}
         </p>
-        <div className="mb-4 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
+        <p className="mt-1 text-xs text-on-surface-variant">{t('profile_map_icon_hint')}</p>
+        <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
           {MAP_MAP_ICON_OPTIONS.map((opt) => (
             <button
               key={opt.id}
@@ -282,8 +345,8 @@ export function ProfilePage() {
               onClick={() => setMapIcon(opt.id)}
               className={
                 mapIcon === opt.id
-                  ? 'flex aspect-square items-center justify-center rounded-xl bg-primary text-on-primary ring-2 ring-amber-400'
-                  : 'flex aspect-square items-center justify-center rounded-xl border border-outline-variant/40 bg-surface-container-lowest text-on-surface hover:bg-surface-container-high'
+                  ? 'flex aspect-square items-center justify-center rounded-2xl bg-primary text-on-primary ring-2 ring-amber-400/90'
+                  : 'flex aspect-square items-center justify-center rounded-2xl border border-outline-variant/35 bg-surface text-on-surface transition hover:bg-surface-container-high'
               }
             >
               <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -292,108 +355,102 @@ export function ProfilePage() {
             </button>
           ))}
         </div>
-        <label className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">
-          Fahrzeugklasse (Vignette / Maut)
+        <label className="mt-5 block text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          {t('profile_toll_class_title')}
         </label>
-        <p className="mb-2 text-xs text-on-surface-variant">
-          Wird für Hinweise entlang deiner Route verwendet (z. B. Pkw vs. Motorrad vs. Nutzfahrzeug).
-        </p>
+        <p className="mt-1 text-xs text-on-surface-variant">{t('profile_toll_class_hint')}</p>
         <select
           value={tollVehicleClass}
           onChange={(e) => setTollVehicleClass(e.target.value as TollVehicleClass)}
-          className="mb-6 w-full max-w-md rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-sm font-semibold"
+          className="mt-2 w-full rounded-2xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm font-semibold"
         >
-          <option value="car">Pkw / Kleinbus</option>
-          <option value="motorcycle">Motorrad</option>
-          <option value="heavy">Lkw / schweres Nutzfahrzeug</option>
-          <option value="other">Sonstiges</option>
+          <option value="car">{t('profile_toll_car')}</option>
+          <option value="motorcycle">{t('profile_toll_motorcycle')}</option>
+          <option value="heavy">{t('profile_toll_heavy')}</option>
+          <option value="other">{t('profile_toll_other')}</option>
         </select>
         <button
           type="button"
           disabled={saving}
           onClick={() => void saveProfile()}
-          className="rounded-xl bg-primary px-6 py-2 font-bold text-on-primary disabled:opacity-50"
+          className="mt-5 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-on-primary disabled:opacity-50"
         >
-          {saving ? '…' : 'Speichern'}
+          {saving ? t('profile_saving') : t('profile_save')}
         </button>
       </section>
 
-      <section className="mb-12">
-        <div className="mb-6 flex items-center justify-between">
-          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">Fahrzeug</h3>
+      <section className="mb-5 rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-on-surface">{t('profile_vehicle_section')}</h2>
           {primary ? (
-            <span className="rounded-full bg-primary/10 px-3 py-1 font-sans text-xs font-bold text-primary">
-              Aktiv
+            <span className="rounded-full bg-primary/12 px-2.5 py-0.5 text-[11px] font-bold text-primary">
+              {t('profile_vehicle_active')}
             </span>
           ) : null}
         </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div className="rounded-xl bg-surface-container-low p-6">
-            <label className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Bezeichnung</label>
-            <input
-              value={vLabel}
-              onChange={(e) => setVLabel(e.target.value)}
-              placeholder="z. B. Volvo XC90"
-              className="mb-4 w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2"
-            />
-            <label className="mb-1 block text-xs font-bold uppercase text-on-surface-variant">Kennzeichen</label>
-            <input
-              value={vPlate}
-              onChange={(e) => setVPlate(e.target.value)}
-              className="mb-4 w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2"
-            />
-            <label className="flex items-center gap-2 text-sm font-medium">
-              <input
-                type="checkbox"
-                checked={vTrailer}
-                onChange={(e) => setVTrailer(e.target.checked)}
-              />
-              Römork / Anhänger-Modus
-            </label>
-          </div>
-        </div>
+        <label className="block text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          {t('profile_vehicle_label')}
+        </label>
+        <input
+          value={vLabel}
+          onChange={(e) => setVLabel(e.target.value)}
+          placeholder={t('profile_vehicle_label_ph')}
+          className="mt-1.5 w-full rounded-2xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm"
+        />
+        <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+          {t('profile_vehicle_plate')}
+        </label>
+        <input
+          value={vPlate}
+          onChange={(e) => setVPlate(e.target.value)}
+          className="mt-1.5 w-full rounded-2xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm"
+        />
+        <label className="mt-4 flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" checked={vTrailer} onChange={(e) => setVTrailer(e.target.checked)} />
+          {t('profile_vehicle_trailer')}
+        </label>
       </section>
 
-      <section>
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-sans text-xl font-bold uppercase tracking-tighter">Vignetten & Maut</h3>
-          <Link to="/legal/privacy" className="text-xs font-bold text-primary">
-            Datenschutz
+      <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-on-surface">{t('profile_vignette_section')}</h2>
+          <Link to="/legal/privacy" className="text-xs font-semibold text-primary">
+            {t('profile_vignette_privacy')}
           </Link>
         </div>
-        <div className="rounded-xl bg-surface-container-low px-6 py-5 text-sm leading-relaxed text-on-surface-variant">
-          <p>
-            Nach einer berechneten Route kannst du auf der{' '}
-            <Link to="/" className="font-bold text-primary underline">
-              Karte
-            </Link>{' '}
-            eine Service-Anfrage senden. Das Team setzt ein <strong className="text-on-surface">kumuliertes
-            Gesamtangebot</strong> für deine Auswahl; danach zahlst du hier <strong className="text-on-surface">einen
-            Betrag</strong> (Stripe und/oder PayPal, je nach Server-Konfiguration).
-          </p>
-        </div>
-        <div className="mt-4 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-4 py-4">
-          <p className="text-xs font-bold uppercase text-on-surface-variant">Deine Anfragen</p>
+        <p className="text-sm leading-relaxed text-on-surface-variant">
+          {t('profile_vignette_intro_pre')}{' '}
+          <Link to="/" className="font-semibold text-primary underline">
+            {t('profile_vignette_map_link')}
+          </Link>
+          {t('profile_vignette_intro_post')}
+        </p>
+        <div className="mt-5 rounded-2xl border border-outline-variant/35 bg-surface px-4 py-4">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">{t('profile_vignette_requests')}</p>
           {vignetteLoading ? (
-            <p className="mt-2 text-sm text-on-surface-variant">Laden…</p>
+            <p className="mt-2 text-sm text-on-surface-variant">{t('profile_vignette_loading')}</p>
           ) : vignetteOrders.length === 0 ? (
-            <p className="mt-2 text-sm text-on-surface-variant">Noch keine Anfragen.</p>
+            <p className="mt-2 text-sm text-on-surface-variant">{t('profile_vignette_empty')}</p>
           ) : (
             <ul className="mt-3 space-y-3">
               {vignetteOrders.map((o) => (
                 <li
                   key={o.id}
-                  className="flex flex-col gap-2 rounded-lg border border-outline-variant/35 bg-surface-container-high/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 rounded-2xl border border-outline-variant/30 bg-surface-container-high/25 p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="text-sm font-bold text-on-surface">{o.routeLabel || 'Route'}</p>
-                    <p className="text-[11px] uppercase text-primary">{o.status}</p>
+                    <p className="text-sm font-semibold text-on-surface">{o.routeLabel || t('profile_vignette_route')}</p>
+                    <p className="text-[11px] font-bold uppercase text-primary">{o.status}</p>
                     <p className="text-xs text-on-surface-variant">
-                      {new Date(o.createdAt).toLocaleString('de-DE')}
-                      {o.paidAt ? ` · bezahlt ${new Date(o.paidAt).toLocaleString('de-DE')}` : ''}
+                      {new Date(o.createdAt).toLocaleString(loc)}
+                      {o.paidAt
+                        ? ` · ${t('profile_vignette_paid')} ${new Date(o.paidAt).toLocaleString(loc)}`
+                        : ''}
                     </p>
                     {o.quotedTotalEur != null ? (
-                      <p className="text-xs font-semibold text-on-surface">Angebot: {o.quotedTotalEur.toFixed(2)} €</p>
+                      <p className="text-xs font-semibold text-on-surface">
+                        {t('profile_vignette_quoted')}: {o.quotedTotalEur.toFixed(2)} €
+                      </p>
                     ) : null}
                   </div>
                   {o.canPayStripe || o.canPayPaypal ? (
@@ -410,15 +467,15 @@ export function ProfilePage() {
                                 const { url } = await createVignetteStripeCheckoutSession(token, o.id)
                                 window.location.href = url
                               } catch (e) {
-                                setMsg(e instanceof Error ? e.message : 'Stripe-Checkout nicht möglich.')
+                                setMsg(e instanceof Error ? e.message : t('profile_checkout_fail'))
                               } finally {
                                 setVignettePayBusy(null)
                               }
                             })()
                           }}
-                          className="rounded-xl bg-secondary px-4 py-2 text-xs font-black text-on-secondary disabled:opacity-40"
+                          className="rounded-xl bg-secondary px-4 py-2 text-xs font-bold text-on-secondary disabled:opacity-40"
                         >
-                          {vignettePayBusy === `${o.id}-stripe` ? '…' : 'Bezahlen (Stripe)'}
+                          {vignettePayBusy === `${o.id}-stripe` ? t('profile_pay_busy') : t('profile_pay_stripe')}
                         </button>
                       ) : null}
                       {o.canPayPaypal ? (
@@ -433,15 +490,15 @@ export function ProfilePage() {
                                 const { url } = await createVignettePaypalCheckoutSession(token, o.id)
                                 window.location.href = url
                               } catch (e) {
-                                setMsg(e instanceof Error ? e.message : 'PayPal-Checkout nicht möglich.')
+                                setMsg(e instanceof Error ? e.message : t('profile_checkout_fail_paypal'))
                               } finally {
                                 setVignettePayBusy(null)
                               }
                             })()
                           }}
-                          className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-2 text-xs font-black text-on-surface disabled:opacity-40"
+                          className="rounded-xl border border-outline-variant bg-surface px-4 py-2 text-xs font-bold text-on-surface disabled:opacity-40"
                         >
-                          {vignettePayBusy === `${o.id}-paypal` ? '…' : 'Bezahlen (PayPal)'}
+                          {vignettePayBusy === `${o.id}-paypal` ? t('profile_pay_busy') : t('profile_pay_paypal')}
                         </button>
                       ) : null}
                     </div>

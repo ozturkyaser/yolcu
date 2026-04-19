@@ -21,6 +21,11 @@ export function commentVoicePath(commentId: string): string {
   return join(getVoiceStorageDir(), `c-${commentId}.webm`)
 }
 
+/** Post-Medien (Community): Dateiname = storage_key (z. B. p-uuid.jpg) */
+export function postMediaDiskPath(storageKey: string): string {
+  return join(getVoiceStorageDir(), storageKey)
+}
+
 export function readVoiceIfExists(path: string): import('node:fs').ReadStream | null {
   try {
     if (!existsSync(path) || statSync(path).size < 1) return null

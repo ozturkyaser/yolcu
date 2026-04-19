@@ -86,7 +86,16 @@ export async function startPttStream(
   }
 }
 
-export function usePttPlayback(userIdSelf: string | undefined) {
+export type PttPlaybackOptions = {
+  /** Anderer Nutzer spricht (PTT): Radio ducken. */
+  onRemotePttStart?: () => void
+  onRemotePttEnd?: () => void
+}
+
+export function usePttPlayback(userIdSelf: string | undefined, opts?: PttPlaybackOptions) {
+  const optsRef = useRef(opts)
+  optsRef.current = opts
+
   const ctxRef = useRef<AudioContext | null>(null)
   const nextPlayRef = useRef(0)
   const rateBySpeakerRef = useRef<Map<string, number>>(new Map())
@@ -109,12 +118,14 @@ export function usePttPlayback(userIdSelf: string | undefined) {
       if (data.userId === userIdSelf) return
       const ctx = ensureCtx()
       if (data.phase === 'start') {
+        optsRef.current?.onRemotePttStart?.()
         const r = data.sampleRate && data.sampleRate > 8000 ? data.sampleRate : 48000
         rateBySpeakerRef.current.set(data.userId, r)
         nextPlayRef.current = Math.max(nextPlayRef.current, ctx.currentTime)
         return
       }
       if (data.phase === 'end') {
+        optsRef.current?.onRemotePttEnd?.()
         return
       }
       if (data.phase !== 'chunk' || !data.pcmBase64) return

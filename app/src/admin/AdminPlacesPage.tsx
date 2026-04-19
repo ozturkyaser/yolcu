@@ -6,6 +6,7 @@ import {
   patchAdminCuratedPlace,
   type CuratedPlaceCategory,
   type CuratedPlaceDto,
+  type SilaRouteCodeFilter,
 } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -22,6 +23,8 @@ const emptyForm = {
   imageUrl: '',
   isPublished: true,
   sortOrder: '0',
+  /** leer = alle Routen (NULL in DB) */
+  routeCode: '' as '' | SilaRouteCodeFilter,
 }
 
 export function AdminPlacesPage() {
@@ -69,6 +72,7 @@ export function AdminPlacesPage() {
       imageUrl: p.imageUrl,
       isPublished: p.isPublished,
       sortOrder: String(p.sortOrder),
+      routeCode: (p.routeCode ?? '') as '' | SilaRouteCodeFilter,
     })
     setModal('edit')
   }
@@ -103,6 +107,7 @@ export function AdminPlacesPage() {
           imageUrl: form.imageUrl.trim(),
           isPublished: form.isPublished,
           sortOrder: parseInt(form.sortOrder, 10) || 0,
+          routeCode: form.routeCode ? form.routeCode : null,
         })
       } else if (modal === 'edit' && editing) {
         await patchAdminCuratedPlace(token, editing.id, {
@@ -118,6 +123,7 @@ export function AdminPlacesPage() {
           imageUrl: form.imageUrl.trim(),
           isPublished: form.isPublished,
           sortOrder: parseInt(form.sortOrder, 10) || 0,
+          routeCode: form.routeCode ? form.routeCode : null,
         })
       }
       closeModal()
@@ -156,8 +162,8 @@ export function AdminPlacesPage() {
         </button>
       </div>
       <p className="text-xs text-on-surface-variant">
-        Diese Orte erscheinen auf der Karte als farbige Marker (Unterkunft, Restaurant, Rasthof) und können von
-        Nutzerinnen zur Route gewählt werden.
+        Kuratierte Tipps zur Sıla-Route: Kategorien inkl. Werkstatt und Grenze; optional Routencode (Nord/West/Süd/Balkan),
+        damit Marker nur für die gewählte Variante erscheinen.
       </p>
       {err ? <p className="rounded-xl bg-error-container px-3 py-2 text-sm text-on-error-container">{err}</p> : null}
       <ul className="space-y-2">
@@ -169,7 +175,8 @@ export function AdminPlacesPage() {
             <div>
               <p className="font-bold text-on-surface">{p.name}</p>
               <p className="text-[11px] uppercase text-on-surface-variant">
-                {p.category} · {p.isPublished ? 'veröffentlicht' : 'Entwurf'}
+                {p.category}
+                {p.routeCode ? ` · ${p.routeCode}` : ''} · {p.isPublished ? 'veröffentlicht' : 'Entwurf'}
               </p>
               <p className="text-xs text-on-surface-variant">
                 {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
@@ -211,6 +218,25 @@ export function AdminPlacesPage() {
                 <option value="accommodation">Unterkunft</option>
                 <option value="restaurant">Restaurant</option>
                 <option value="rest_area">Rasthof / Pause</option>
+                <option value="workshop">Werkstatt</option>
+                <option value="border">Grenze / Kontrollpunkt</option>
+              </select>
+              <label className="text-[11px] font-bold text-on-surface-variant">Routen-Variante (optional)</label>
+              <select
+                value={form.routeCode}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    routeCode: e.target.value as '' | SilaRouteCodeFilter,
+                  }))
+                }
+                className="rounded-xl border border-outline-variant bg-surface px-3 py-2 text-sm"
+              >
+                <option value="">Alle / nicht zugeordnet</option>
+                <option value="A_NORTH">A · Nord</option>
+                <option value="B_WEST">B · West</option>
+                <option value="C_SOUTH">C · Süd</option>
+                <option value="COMMON">Balkan-Kern (ab Belgrad)</option>
               </select>
               <label className="text-[11px] font-bold text-on-surface-variant">Name</label>
               <input

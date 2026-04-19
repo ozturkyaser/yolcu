@@ -12,6 +12,7 @@ import { LegalPage } from './pages/LegalPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { GroupChatPage } from './pages/GroupChatPage'
 import { RideMarketplacePage } from './pages/RideMarketplacePage'
+import { RadioPage } from './pages/RadioPage'
 import { AdminSection } from './admin/AdminSection'
 import { AppBuildStamp } from './components/AppBuildStamp'
 
@@ -29,6 +30,7 @@ export default function App() {
           <Route index element={<MapDashboardPage />} />
           <Route path="community" element={<CommunityFeedPage />} />
           <Route path="rides" element={<RideMarketplacePage />} />
+          <Route path="radio" element={<RadioPage />} />
           <Route path="groups" element={<GroupsPage />} />
           <Route path="groups/:id" element={<GroupChatPage />} />
           <Route path="profile" element={<ProfilePage />} />

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { AuthProvider } from './context/AuthContext'
+import { RadioPlayerProvider } from './context/RadioPlayerContext'
 import './index.css'
 import App from './App.tsx'
 
@@ -15,7 +16,9 @@ if (!rootEl) {
     <StrictMode>
       <ErrorBoundary>
         <AuthProvider>
-          <App />
+          <RadioPlayerProvider>
+            <App />
+          </RadioPlayerProvider>
         </AuthProvider>
       </ErrorBoundary>
     </StrictMode>,

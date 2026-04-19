@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import multipart from '@fastify/multipart'
@@ -17,7 +17,14 @@ import {
   leaveAllRooms,
 } from './realtime.js'
 import { pool } from './pool.js'
-import { commentVoicePath, ensureVoiceDir, getVoiceStorageDir, groupVoicePath, readVoiceIfExists } from './voiceStorage.js'
+import {
+  commentVoicePath,
+  ensureVoiceDir,
+  getVoiceStorageDir,
+  groupVoicePath,
+  postMediaDiskPath,
+  readVoiceIfExists,
+} from './voiceStorage.js'
 
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -208,8 +215,29 @@ const groupConvoyPatchSchema = z.object({
   convoyStatus: z.enum(['driving', 'pause', 'fuel', 'border', 'arrived']).optional().nullable(),
 })
 
+const POST_MEDIA_MAX = 22 * 1024 * 1024
+
+function extForPostMedia(mime: string): string {
+  const m = mime.toLowerCase().split(';')[0]?.trim() ?? ''
+  if (m === 'image/jpeg') return '.jpg'
+  if (m === 'image/png') return '.png'
+  if (m === 'image/webp') return '.webp'
+  if (m === 'image/gif') return '.gif'
+  if (m === 'video/mp4') return '.mp4'
+  if (m === 'video/webm') return '.webm'
+  if (m === 'video/quicktime') return '.mov'
+  return '.bin'
+}
+
+function postMediaKindFromMime(mime: string): 'image' | 'video' | null {
+  const m = mime.toLowerCase()
+  if (m.startsWith('image/')) return 'image'
+  if (m.startsWith('video/')) return 'video'
+  return null
+}
+
 export async function registerSocialRoutes(app: FastifyInstance) {
-  await app.register(multipart, { limits: { fileSize: 3 * 1024 * 1024 } })
+  await app.register(multipart, { limits: { fileSize: Math.max(3 * 1024 * 1024, POST_MEDIA_MAX) } })
   await app.register(websocket)
 
   app.get('/api/ws', { websocket: true }, (ws: WebSocket, request) => {
@@ -667,6 +695,145 @@ export async function registerSocialRoutes(app: FastifyInstance) {
 
     const payload = await insertGroupMessage(id, request.user.sub, parsed.data.body)
     return { message: payload }
+  })
+
+  app.get('/api/posts/:id/media', async (request, reply) => {
+    const id = (request.params as { id: string }).id
+    const r = await pool.query(
+      `SELECT media_storage_key, media_mime FROM posts WHERE id = $1 AND media_storage_key IS NOT NULL`,
+      [id],
+    )
+    const row = r.rows[0] as { media_storage_key: string; media_mime: string | null } | undefined
+    if (!row?.media_storage_key) return reply.status(404).send({ error: 'Nicht gefunden' })
+    const fullPath = postMediaDiskPath(row.media_storage_key)
+    const stream = readVoiceIfExists(fullPath)
+    if (!stream) return reply.status(404).send({ error: 'Datei fehlt' })
+    reply.header('Content-Type', row.media_mime || 'application/octet-stream')
+    reply.header('Cache-Control', 'public, max-age=86400')
+    return reply.send(stream)
+  })
+
+  const postWithMediaFieldsSchema = z.object({
+    category: z.enum(['general', 'traffic', 'border', 'help']).optional().default('general'),
+    body: z.string().max(2000).optional().default(''),
+    locationLabel: z.string().max(200).optional(),
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
+    expiresInHours: z.coerce.number().min(1).max(168).optional(),
+    borderWaitMinutes: z.coerce.number().int().min(0).max(1440).optional(),
+    borderSlug: z.string().max(80).optional(),
+  })
+
+  app.post('/api/posts/with-media', { preHandler: authenticate }, async (request, reply) => {
+    const fields: Record<string, string> = {}
+    let buffer: Buffer | null = null
+    let mimeIn = ''
+    const parts = request.parts()
+    for await (const part of parts) {
+      if (part.type === 'field') {
+        fields[part.fieldname] = String(part.value ?? '')
+      } else if (part.type === 'file' && part.fieldname === 'media') {
+        buffer = await part.toBuffer()
+        if (part.mimetype) mimeIn = part.mimetype
+      }
+    }
+    if (!buffer || buffer.length < 80) {
+      return reply.status(400).send({ error: 'Foto oder Video erforderlich' })
+    }
+    if (buffer.length > POST_MEDIA_MAX) {
+      return reply.status(400).send({ error: 'Datei zu groß (max. ca. 22 MB)' })
+    }
+    const kind = postMediaKindFromMime(mimeIn)
+    if (!kind) {
+      return reply.status(400).send({ error: 'Nur Bild- oder Videoformate erlaubt' })
+    }
+
+    const num = (s: string | undefined) => {
+      const t = s?.trim()
+      if (!t) return undefined
+      const n = Number(t)
+      return Number.isFinite(n) ? n : undefined
+    }
+    const parsed = postWithMediaFieldsSchema.safeParse({
+      category: fields.category,
+      body: fields.body,
+      locationLabel: fields.locationLabel,
+      lat: num(fields.lat),
+      lng: num(fields.lng),
+      expiresInHours: num(fields.expiresInHours),
+      borderWaitMinutes: num(fields.borderWaitMinutes),
+      borderSlug: fields.borderSlug,
+    })
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    const d = parsed.data
+    const caption = d.body.trim()
+    const category = d.category
+    let expiresAt: Date | null = null
+    if (d.expiresInHours) expiresAt = new Date(Date.now() + d.expiresInHours * 3600 * 1000)
+    const bw =
+      category === 'border' && d.borderWaitMinutes != null ? Math.round(d.borderWaitMinutes) : null
+    const bs =
+      category === 'border' && d.borderSlug?.trim()
+        ? d.borderSlug.trim().toLowerCase().slice(0, 80)
+        : null
+
+    const ext = extForPostMedia(mimeIn)
+    const postId = randomUUID()
+    const storageKey = `p-${postId}${ext}`
+    ensureVoiceDir()
+    writeFileSync(postMediaDiskPath(storageKey), buffer)
+
+    const r = await pool.query(
+      `INSERT INTO posts (
+         id, user_id, body, category, location_label, lat, lng, expires_at,
+         border_wait_minutes, border_slug, media_kind, media_storage_key, media_mime
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id, body, category, location_label, lat, lng, helpful_count, expires_at, created_at,
+                 border_wait_minutes, border_slug, media_kind, media_storage_key, media_mime`,
+      [
+        postId,
+        request.user.sub,
+        caption,
+        category,
+        d.locationLabel?.trim() || null,
+        d.lat ?? null,
+        d.lng ?? null,
+        expiresAt,
+        bw,
+        bs,
+        kind,
+        storageKey,
+        mimeIn.split(';')[0]?.trim() || 'application/octet-stream',
+      ],
+    )
+    const row = r.rows[0]
+    const u = await pool.query(`SELECT id, display_name, map_icon FROM users WHERE id = $1`, [
+      request.user.sub,
+    ])
+    const author = u.rows[0]
+    if (!author) return reply.status(500).send({ error: 'Nutzer' })
+    const post = {
+      id: row.id,
+      body: row.body,
+      category: row.category,
+      locationLabel: row.location_label,
+      lat: row.lat,
+      lng: row.lng,
+      helpfulCount: row.helpful_count,
+      expiresAt: row.expires_at,
+      createdAt: row.created_at,
+      borderWaitMinutes: row.border_wait_minutes ?? null,
+      borderSlug: row.border_slug ?? null,
+      mediaKind: kind,
+      mediaUrl: `/api/posts/${row.id}/media`,
+      author: {
+        id: author.id,
+        displayName: author.display_name,
+        mapIcon: author.map_icon ?? 'person',
+      },
+    }
+    return { post }
   })
 
   app.get('/api/posts/:id/comments', async (request, reply) => {

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ozturkyaser.yolarkadasim',
-  appName: 'Yol Arkadaşım',
+  appName: 'Yol',
   webDir: 'dist'
 };
 

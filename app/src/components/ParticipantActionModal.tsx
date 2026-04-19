@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useRadioPlayer } from '../context/RadioPlayerContext'
 import { useWebmVoiceRecord } from '../hooks/useWebmVoiceRecord'
 import { fetchSharedGroupsWithUser, postGroupMessage, postGroupVoiceMessage } from '../lib/api'
 
@@ -34,6 +35,14 @@ export function ParticipantActionModal({
   const [voiceBusy, setVoiceBusy] = useState(false)
   const [sentToGroupId, setSentToGroupId] = useState<string | null>(null)
   const { isRecording, start: startVoiceRec, stop: stopVoiceRec } = useWebmVoiceRecord()
+  const radio = useRadioPlayer()
+
+  useEffect(() => {
+    if (isRecording) {
+      radio.beginUserCapture()
+      return () => radio.endUserCapture()
+    }
+  }, [isRecording, radio])
 
   useEffect(() => {
     if (!open || !participant || !token) {

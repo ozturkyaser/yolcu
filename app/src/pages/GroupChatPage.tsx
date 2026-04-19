@@ -17,6 +17,7 @@ import {
 } from '../lib/api'
 import { resolveTollVehicleClass } from '../lib/tollVehicle'
 import { useAuth } from '../context/AuthContext'
+import { useRadioPlayer } from '../context/RadioPlayerContext'
 
 type WsPayload =
   | {
@@ -120,10 +121,21 @@ export function GroupChatPage() {
     pcmBase64?: string
   }) => void>(() => {})
 
-  const { handlePttPayload } = usePttPlayback(user?.id)
+  const radio = useRadioPlayer()
+  const { handlePttPayload } = usePttPlayback(user?.id, {
+    onRemotePttStart: () => radio.beginVoiceMessagePlayback(),
+    onRemotePttEnd: () => radio.endVoiceMessagePlayback(),
+  })
   handlePttPlaybackRef.current = handlePttPayload
 
   const { isRecording, start: startVoiceRec, stop: stopVoiceRec } = useWebmVoiceRecord()
+
+  useEffect(() => {
+    if (isRecording || pttLiveUi) {
+      radio.beginUserCapture()
+      return () => radio.endUserCapture()
+    }
+  }, [isRecording, pttLiveUi, radio])
 
   const scrollDown = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })

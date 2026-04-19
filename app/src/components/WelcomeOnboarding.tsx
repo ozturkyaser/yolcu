@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nContext'
+import { AppLogoMark } from './AppLogo'
 
 const LS_DONE = 'yol_onboarding_v1_done'
 
@@ -112,9 +113,12 @@ export function WelcomeOnboarding() {
           className={`relative shrink-0 bg-gradient-to-br px-6 pt-7 pb-8 text-on-primary ${stepMeta.accent}`}
         >
           <div className="flex items-start justify-between gap-3">
-            <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-primary/90">
-              {t('onboarding_kicker')}
-            </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <AppLogoMark className="h-10 w-10 shrink-0 text-white drop-shadow-sm" />
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-primary/90">
+                {t('onboarding_kicker')}
+              </p>
+            </div>
             <button
               type="button"
               onClick={finish}

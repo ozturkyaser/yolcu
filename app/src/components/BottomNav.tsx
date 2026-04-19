@@ -77,7 +77,7 @@ export function BottomNav() {
   return (
     <nav
       ref={navRef}
-      className="fixed bottom-0 left-0 z-50 grid w-full grid-cols-6 items-end gap-0 rounded-t-3xl bg-surface-container-lowest/80 px-0.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_32px_rgba(26,28,28,0.08)] backdrop-blur-3xl dark:bg-inverse-surface/80 sm:px-2"
+      className="fixed bottom-0 left-0 z-50 grid w-full grid-cols-7 items-end gap-0 rounded-t-3xl bg-surface-container-lowest/80 px-0.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_32px_rgba(26,28,28,0.08)] backdrop-blur-3xl dark:bg-inverse-surface/80 sm:px-2"
     >
       {leftNav.map(({ to, label, icon, end }) => (
         <NavLink key={to} to={to} end={end} className={({ isActive }) => navItemCls(isActive)}>
@@ -104,6 +104,13 @@ export function BottomNav() {
           mapGroupFilter="all"
         />
       </div>
+
+      <NavLink to="/radio" className={({ isActive }) => navItemCls(isActive)}>
+        <span className="material-symbols-outlined text-[22px] sm:text-2xl">radio</span>
+        <span className="line-clamp-2 max-w-full text-center font-sans text-[0.58rem] font-medium uppercase leading-tight tracking-wide sm:text-[0.7rem]">
+          {t('navRadio')}
+        </span>
+      </NavLink>
 
       <NavLink to="/groups" className={({ isActive }) => navItemCls(isActive)}>
         <span className="material-symbols-outlined text-[22px] sm:text-2xl">groups</span>

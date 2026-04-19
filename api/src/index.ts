@@ -23,6 +23,8 @@ import { registerAdminAndCuratedRoutes } from './adminRoutes.js'
 import { registerVignetteServiceRoutes } from './vignetteServiceRoutes.js'
 import { registerRideShareRoutes } from './rideShareRoutes.js'
 import { registerSocialRoutes } from './socialRoutes.js'
+import { registerRadioRoutes } from './radioRoutes.js'
+import { registerPromotionRoutes } from './promotionRoutes.js'
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
@@ -209,6 +211,8 @@ async function buildServer() {
   await registerSocialRoutes(app)
   await registerRideShareRoutes(app)
   await registerAdminAndCuratedRoutes(app)
+  await registerPromotionRoutes(app)
+  await registerRadioRoutes(app)
   await registerVignetteServiceRoutes(app)
 
   app.get('/api/health', async () => ({ ok: true }))
@@ -295,8 +299,8 @@ async function buildServer() {
     const category = q.data.category
     const r = await pool.query(
       `SELECT p.id, p.body, p.category, p.location_label, p.lat, p.lng, p.helpful_count, p.expires_at, p.created_at,
-              p.border_wait_minutes, p.border_slug,
-              u.id AS author_id, u.display_name AS author_name
+              p.border_wait_minutes, p.border_slug, p.media_kind, p.media_storage_key, p.media_mime,
+              u.id AS author_id, u.display_name AS author_name, u.map_icon AS author_map_icon
        FROM posts p
        JOIN users u ON u.id = p.user_id
        WHERE ($1::text IS NULL OR p.category = $1)
@@ -333,13 +337,14 @@ async function buildServer() {
       [request.user.sub, body, category, locationLabel ?? null, lat ?? null, lng ?? null, expiresAt, bw, bs],
     )
     const row = r.rows[0]
-    const u = await pool.query(`SELECT id, display_name FROM users WHERE id = $1`, [request.user.sub])
+    const u = await pool.query(`SELECT id, display_name, map_icon FROM users WHERE id = $1`, [request.user.sub])
     const author = u.rows[0]
     return {
       post: mapPost({
         ...row,
         author_id: author.id,
         author_name: author.display_name,
+        author_map_icon: author.map_icon,
       }),
     }
   })
@@ -1037,7 +1042,13 @@ function mapPost(row: {
   author_name: string
   border_wait_minutes?: number | null
   border_slug?: string | null
+  media_kind?: string | null
+  media_storage_key?: string | null
+  media_mime?: string | null
+  author_map_icon?: string | null
 }) {
+  const mk = row.media_kind
+  const mediaKind = mk === 'image' || mk === 'video' ? mk : null
   return {
     id: row.id,
     body: row.body,
@@ -1050,7 +1061,13 @@ function mapPost(row: {
     createdAt: row.created_at,
     borderWaitMinutes: row.border_wait_minutes ?? null,
     borderSlug: row.border_slug ?? null,
-    author: { id: row.author_id, displayName: row.author_name },
+    mediaKind,
+    mediaUrl: row.media_storage_key ? `/api/posts/${row.id}/media` : null,
+    author: {
+      id: row.author_id,
+      displayName: row.author_name,
+      mapIcon: row.author_map_icon && row.author_map_icon.length > 0 ? row.author_map_icon : 'person',
+    },
   }
 }
 

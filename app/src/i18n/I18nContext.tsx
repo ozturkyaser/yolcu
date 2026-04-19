@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { readStoredLang, STRINGS, writeStoredLang, type Lang } from './strings'
 
 type Ctx = {
@@ -16,6 +16,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     setLangState(l)
     writeStoredLang(l)
   }, [])
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = lang
+    }
+  }, [lang])
 
   const t = useCallback(
     (key: string) => {

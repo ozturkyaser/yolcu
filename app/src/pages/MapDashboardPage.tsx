@@ -33,6 +33,7 @@ import {
   fetchCuratedPlaces,
   type CuratedPlaceDto,
   type CuratedPlaceCategory,
+  type SilaRouteCodeFilter,
   createVignetteOrderRequest,
   fetchVignetteServiceProducts,
   type VignetteServiceProductDto,
@@ -58,6 +59,7 @@ import {
   snapPositionForNavigation,
   totalPolylineLengthM,
 } from '../lib/routeNavigation'
+import { SILA_ROUTE_VARIANTS } from '../lib/silaRouteBackbone'
 import {
   clearNavSession,
   readNavRecents,
@@ -172,6 +174,8 @@ export function MapDashboardPage() {
   const [pois, setPois] = useState<MapPoiDto[]>([])
   const [curatedPlaces, setCuratedPlaces] = useState<CuratedPlaceDto[]>([])
   const [curatedCategoryFilter, setCuratedCategoryFilter] = useState<CuratedPlaceCategory | ''>('')
+  /** Tipps nach typischer Sıla-Variante filtern (Server: COMMON + passend + ohne route_code). */
+  const [curatedRouteFilter, setCuratedRouteFilter] = useState<'ALL' | SilaRouteCodeFilter>('ALL')
   const [curatedSheet, setCuratedSheet] = useState<CuratedPlaceDto | null>(null)
   const [vignetteModalOpen, setVignetteModalOpen] = useState(false)
   /** Snapshot für das Modal (bleibt erhalten, wenn die Route nach „Navigation beenden“ gelöscht wird). */
@@ -416,14 +420,15 @@ export function MapDashboardPage() {
     ;(async () => {
       try {
         const cat = curatedCategoryFilter || undefined
-        const { places } = await fetchCuratedPlaces(cat)
+        const route = curatedRouteFilter === 'ALL' ? undefined : curatedRouteFilter
+        const { places } = await fetchCuratedPlaces({ category: cat, route })
         if (!ac.signal.aborted) setCuratedPlaces(places)
       } catch {
         if (!ac.signal.aborted) setCuratedPlaces([])
       }
     })()
     return () => ac.abort()
-  }, [curatedCategoryFilter])
+  }, [curatedCategoryFilter, curatedRouteFilter])
 
   const loadParticipants = useCallback(
     async (lat: number, lng: number) => {
@@ -1490,11 +1495,14 @@ export function MapDashboardPage() {
               >
                 <span
                   className="material-symbols-outlined text-[28px]"
-                  style={{ fontVariationSettings: curatedCategoryFilter ? "'FILL' 1" : "'FILL' 0" }}
+                  style={{
+                    fontVariationSettings:
+                      curatedCategoryFilter || curatedRouteFilter !== 'ALL' ? "'FILL' 1" : "'FILL' 0",
+                  }}
                 >
                   star
                 </span>
-                {curatedCategoryFilter ? (
+                {curatedCategoryFilter || curatedRouteFilter !== 'ALL' ? (
                   <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary ring-2 ring-surface-container-lowest" />
                 ) : null}
               </button>
@@ -1518,6 +1526,8 @@ export function MapDashboardPage() {
                       { k: 'accommodation' as const, lab: 'Unterkunft' },
                       { k: 'restaurant' as const, lab: 'Restaurant' },
                       { k: 'rest_area' as const, lab: 'Rasthof' },
+                      { k: 'workshop' as const, lab: 'Werkstatt' },
+                      { k: 'border' as const, lab: 'Grenze' },
                     ] as const
                   ).map(({ k, lab }) => (
                     <button
@@ -1531,6 +1541,37 @@ export function MapDashboardPage() {
                       }`}
                     >
                       {lab}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[9px] font-bold uppercase tracking-wide text-on-surface-variant">
+                  Route (Sıla)
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCuratedRouteFilter('ALL')}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                      curatedRouteFilter === 'ALL'
+                        ? 'bg-secondary text-on-secondary'
+                        : 'bg-surface-container-high text-on-surface-variant'
+                    }`}
+                  >
+                    Alle
+                  </button>
+                  {SILA_ROUTE_VARIANTS.map((v) => (
+                    <button
+                      key={v.code}
+                      type="button"
+                      onClick={() => setCuratedRouteFilter(v.code)}
+                      title={v.labelDe}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        curatedRouteFilter === v.code
+                          ? 'bg-secondary text-on-secondary'
+                          : 'bg-surface-container-high text-on-surface-variant'
+                      }`}
+                    >
+                      {v.shortDe}
                     </button>
                   ))}
                 </div>
@@ -2624,8 +2665,19 @@ export function MapDashboardPage() {
                 ? 'Unterkunft'
                 : curatedSheet.category === 'restaurant'
                   ? 'Restaurant'
-                  : 'Rasthof / Pause'}
+                  : curatedSheet.category === 'rest_area'
+                    ? 'Rasthof / Pause'
+                    : curatedSheet.category === 'workshop'
+                      ? 'Werkstatt'
+                      : 'Grenze / Kontrollpunkt'}
             </p>
+            {curatedSheet.routeCode ? (
+              <p className="mt-1 text-[10px] text-on-surface-variant">
+                Route:{' '}
+                {SILA_ROUTE_VARIANTS.find((x) => x.code === curatedSheet.routeCode)?.shortDe ??
+                  curatedSheet.routeCode}
+              </p>
+            ) : null}
             {curatedSheet.imageUrl?.startsWith('http') ? (
               <img
                 src={curatedSheet.imageUrl}

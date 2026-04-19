@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useRadioPlayer } from '../context/RadioPlayerContext'
 import { useWebmVoiceRecord } from '../hooks/useWebmVoiceRecord'
 import { postGroupMessage, postGroupVoiceMessage, type GroupSummary } from '../lib/api'
 
@@ -57,7 +58,15 @@ type Props = {
 
 export function GroupQuickWalkie({ token, user, groups, mapGroupFilter, dock = 'map' }: Props) {
   const navigate = useNavigate()
+  const radio = useRadioPlayer()
   const { isRecording, start: startRec, stop: stopRec } = useWebmVoiceRecord()
+
+  useEffect(() => {
+    if (isRecording) {
+      radio.beginUserCapture()
+      return () => radio.endUserCapture()
+    }
+  }, [isRecording, radio])
   const [voiceBusy, setVoiceBusy] = useState(false)
   const [textBusy, setTextBusy] = useState(false)
   const [textOpen, setTextOpen] = useState(false)
@@ -357,7 +366,7 @@ export function GroupQuickWalkie({ token, user, groups, mapGroupFilter, dock = '
                   style={{ fontVariationSettings: "'FILL' 1" }}
                   aria-hidden
                 >
-                  radio
+                  mic
                 </span>
               </button>
             </div>
@@ -509,7 +518,7 @@ export function GroupQuickWalkie({ token, user, groups, mapGroupFilter, dock = '
               style={{ fontVariationSettings: "'FILL' 1" }}
               aria-hidden
             >
-              radio
+              mic
             </span>
           )}
         </button>

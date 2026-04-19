@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useI18n } from '../i18n/I18nContext'
+import type { Lang } from '../i18n/strings'
+import { AppLogoWithWordmark } from '../components/AppLogo'
 
 export function RegisterPage() {
   const { register } = useAuth()
+  const { t, lang, setLang } = useI18n()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,19 +23,40 @@ export function RegisterPage() {
       await register(email, password, displayName)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registrierung fehlgeschlagen')
+      setError(err instanceof Error ? err.message : t('register_error'))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-surface px-6 py-12 font-sans text-on-surface">
-      <Link to="/" className="mb-8 font-bold text-primary">
-        ← Zurück
-      </Link>
-      <h1 className="mb-2 text-3xl font-bold text-primary">Konto erstellen</h1>
-      <p className="mb-8 text-on-surface-variant">Mindestens 8 Zeichen Passwort</p>
+    <div className="flex min-h-dvh flex-col bg-surface px-6 py-10 font-sans text-on-surface sm:py-12">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <Link to="/" className="text-sm font-bold text-primary">
+          ← {t('auth_back')}
+        </Link>
+        <div className="flex items-center gap-2">
+          <label htmlFor="register-lang" className="sr-only">
+            {t('langLabel')}
+          </label>
+          <select
+            id="register-lang"
+            value={lang}
+            onChange={(e) => setLang(e.target.value as Lang)}
+            className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 text-xs font-bold text-on-surface"
+          >
+            <option value="de">{t('langOptionDe')}</option>
+            <option value="tr">{t('langOptionTr')}</option>
+            <option value="en">{t('langOptionEn')}</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <AppLogoWithWordmark />
+        <h1 className="mt-6 text-3xl font-bold text-primary">{t('registerTitle')}</h1>
+        <p className="mt-2 text-on-surface-variant">{t('registerSubtitle')}</p>
+      </div>
 
       <form onSubmit={onSubmit} className="mx-auto w-full max-w-md space-y-4">
         {error ? (
@@ -39,7 +64,7 @@ export function RegisterPage() {
         ) : null}
         <div>
           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-            Anzeigename
+            {t('register_display')}
           </label>
           <input
             type="text"
@@ -52,7 +77,7 @@ export function RegisterPage() {
         </div>
         <div>
           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-            E-Mail
+            {t('login_email')}
           </label>
           <input
             type="email"
@@ -65,7 +90,7 @@ export function RegisterPage() {
         </div>
         <div>
           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-            Passwort
+            {t('login_password')}
           </label>
           <input
             type="password"
@@ -82,14 +107,14 @@ export function RegisterPage() {
           disabled={busy}
           className="w-full rounded-xl bg-gradient-to-br from-primary to-primary-container py-4 font-bold text-on-primary disabled:opacity-50"
         >
-          {busy ? '…' : 'Registrieren'}
+          {busy ? '…' : t('register_submit')}
         </button>
       </form>
 
       <p className="mx-auto mt-8 max-w-md text-center text-sm text-on-surface-variant">
-        Bereits registriert?{' '}
+        {t('register_has_account')}{' '}
         <Link to="/login" className="font-bold text-primary">
-          Anmelden
+          {t('login')}
         </Link>
       </p>
     </div>

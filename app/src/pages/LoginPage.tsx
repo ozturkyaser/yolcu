@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useI18n } from '../i18n/I18nContext'
+import type { Lang } from '../i18n/strings'
+import { AppLogoWithWordmark } from '../components/AppLogo'
 
 export function LoginPage() {
   const { login } = useAuth()
+  const { t, lang, setLang } = useI18n()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,19 +22,40 @@ export function LoginPage() {
       await login(email, password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen')
+      setError(err instanceof Error ? err.message : t('login_error'))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-surface px-6 py-12 font-sans text-on-surface">
-      <Link to="/" className="mb-8 text-primary font-bold">
-        ← Zurück
-      </Link>
-      <h1 className="mb-2 text-3xl font-bold text-primary">Anmelden</h1>
-      <p className="mb-8 text-on-surface-variant">Yol Arkadaşım – Community &amp; Karte</p>
+    <div className="flex min-h-dvh flex-col bg-surface px-6 py-10 font-sans text-on-surface sm:py-12">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <Link to="/" className="text-sm font-bold text-primary">
+          ← {t('auth_back')}
+        </Link>
+        <div className="flex items-center gap-2">
+          <label htmlFor="login-lang" className="sr-only">
+            {t('langLabel')}
+          </label>
+          <select
+            id="login-lang"
+            value={lang}
+            onChange={(e) => setLang(e.target.value as Lang)}
+            className="rounded-lg border border-outline-variant/40 bg-surface-container-low px-2 py-1.5 text-xs font-bold text-on-surface"
+          >
+            <option value="de">{t('langOptionDe')}</option>
+            <option value="tr">{t('langOptionTr')}</option>
+            <option value="en">{t('langOptionEn')}</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <AppLogoWithWordmark />
+        <h1 className="mt-6 text-3xl font-bold text-primary">{t('loginTitle')}</h1>
+        <p className="mt-2 text-on-surface-variant">{t('loginSubtitle')}</p>
+      </div>
 
       <form onSubmit={onSubmit} className="mx-auto w-full max-w-md space-y-4">
         {error ? (
@@ -38,7 +63,7 @@ export function LoginPage() {
         ) : null}
         <div>
           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-            E-Mail
+            {t('login_email')}
           </label>
           <input
             type="email"
@@ -51,7 +76,7 @@ export function LoginPage() {
         </div>
         <div>
           <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-            Passwort
+            {t('login_password')}
           </label>
           <input
             type="password"
@@ -67,14 +92,14 @@ export function LoginPage() {
           disabled={busy}
           className="w-full rounded-xl bg-gradient-to-br from-primary to-primary-container py-4 font-bold text-on-primary disabled:opacity-50"
         >
-          {busy ? '…' : 'Anmelden'}
+          {busy ? '…' : t('login_submit')}
         </button>
       </form>
 
       <p className="mx-auto mt-8 max-w-md text-center text-sm text-on-surface-variant">
-        Noch kein Konto?{' '}
+        {t('login_no_account')}{' '}
         <Link to="/register" className="font-bold text-primary">
-          Registrieren
+          {t('login_register_cta')}
         </Link>
       </p>
     </div>

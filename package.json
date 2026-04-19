@@ -1,0 +1,11 @@
+{
+  "name": "yol-application",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "dev:app": "npm --prefix app run dev",
+    "dev:api": "npm --prefix api run dev",
+    "stack": "docker compose up -d",
+    "local": "docker compose up -d && npm --prefix app run dev"
+  }
+}

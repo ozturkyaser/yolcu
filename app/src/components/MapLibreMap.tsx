@@ -70,6 +70,10 @@ function curatedPinStyle(category: string): { bg: string; icon: string } {
       return { bg: '#e65100', icon: 'restaurant' }
     case 'rest_area':
       return { bg: '#2e7d32', icon: 'local_gas_station' }
+    case 'workshop':
+      return { bg: '#1565c0', icon: 'car_repair' }
+    case 'border':
+      return { bg: '#b3261e', icon: 'border_outer' }
     default:
       return { bg: '#546e7a', icon: 'place' }
   }

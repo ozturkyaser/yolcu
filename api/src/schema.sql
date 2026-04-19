@@ -47,14 +47,21 @@ CREATE TABLE IF NOT EXISTS vehicles (
 CREATE TABLE IF NOT EXISTS posts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  body TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
   category TEXT NOT NULL CHECK (category IN ('general', 'traffic', 'border', 'help')),
   location_label TEXT,
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
   expires_at TIMESTAMPTZ,
   helpful_count INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  media_kind TEXT CHECK (media_kind IS NULL OR media_kind IN ('image', 'video')),
+  media_storage_key TEXT,
+  media_mime TEXT,
+  CONSTRAINT posts_need_content CHECK (
+    char_length(trim(body)) >= 1
+    OR (media_storage_key IS NOT NULL AND char_length(trim(media_storage_key)) >= 1)
+  )
 );
 
 CREATE INDEX IF NOT EXISTS posts_created_idx ON posts (created_at DESC);
@@ -241,10 +248,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ride_requests_one_pending_per_user
   ON ride_requests (listing_id, requester_id)
   WHERE status = 'pending';
 
--- Admin gepflegte Tipps: Unterkunft, Restaurant, Rasthof (Karte + Navigation)
+-- Admin gepflegte Tipps: Sıla-Route (Karte + Navigation)
 CREATE TABLE IF NOT EXISTS curated_places (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area')),
+  category TEXT NOT NULL CHECK (category IN ('accommodation', 'restaurant', 'rest_area', 'workshop', 'border')),
   name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
   description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 4000),
   lat DOUBLE PRECISION NOT NULL,
@@ -256,12 +263,16 @@ CREATE TABLE IF NOT EXISTS curated_places (
   image_url TEXT NOT NULL DEFAULT '' CHECK (char_length(image_url) <= 800),
   is_published BOOLEAN NOT NULL DEFAULT true,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  route_code TEXT CHECK (
+    route_code IS NULL OR route_code IN ('A_NORTH', 'B_WEST', 'C_SOUTH', 'COMMON')
+  ),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS curated_places_category_idx ON curated_places (category);
 CREATE INDEX IF NOT EXISTS curated_places_published_sort_idx ON curated_places (is_published, sort_order DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS curated_places_route_code_idx ON curated_places (route_code) WHERE route_code IS NOT NULL;
 
 -- Vignetten-/Maut-Service: verkaufbare Positionen (Admin) + Kundenanfragen
 CREATE TABLE IF NOT EXISTS vignette_service_products (
@@ -306,3 +317,16 @@ CREATE TABLE IF NOT EXISTS vignette_order_requests (
 
 CREATE INDEX IF NOT EXISTS vignette_order_requests_created_idx ON vignette_order_requests (created_at DESC);
 CREATE INDEX IF NOT EXISTS vignette_order_requests_status_idx ON vignette_order_requests (status);
+
+-- Online-Radio: Streams werden im Admin gepflegt (Icecast/Shoutcast o. ä.)
+CREATE TABLE IF NOT EXISTS radio_channels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL CHECK (char_length(name) >= 1 AND char_length(name) <= 200),
+  stream_url TEXT NOT NULL CHECK (char_length(stream_url) >= 8 AND char_length(stream_url) <= 2000),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS radio_channels_enabled_sort_idx ON radio_channels (enabled, sort_order DESC, name ASC);
