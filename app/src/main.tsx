@@ -29,8 +29,19 @@ if (!rootEl) {
 function scheduleServiceWorkerRegistration() {
   const run = () => {
     try {
-      registerSW({
+      /** Ohne Reload bleiben Nutzer oft auf altem JS/CSS (lokal = Vite ohne SW → immer frisch). */
+      const updateSW = registerSW({
         immediate: true,
+        onNeedRefresh() {
+          if (
+            typeof window !== 'undefined' &&
+            window.confirm(
+              'Es gibt eine neuere Version der App. Jetzt neu laden? (Empfohlen nach einem Update.)',
+            )
+          ) {
+            void updateSW(true)
+          }
+        },
         onRegisterError(err) {
           console.warn('[PWA] Service Worker konnte nicht registriert werden.', err)
         },
