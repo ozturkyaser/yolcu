@@ -9,7 +9,48 @@ import {
 } from '../lib/api'
 import { useI18n } from '../i18n/I18nContext'
 
+/** Session: bis Tab schließen (showAgainAfterMinutes === 0). */
 const SESSION_DISMISS_PREFIX = 'yol_promo_dismiss_'
+/** Zeitgestützt: ISO-Zeitpunkt des letzten Schließens (Mindestabstand pro Kampagne). */
+const LOCAL_SNOOZE_PREFIX = 'yol_promo_snooze_'
+
+function isPromotionSnoozed(id: string, showAgainAfterMinutes: number): boolean {
+  const mins = Number.isFinite(showAgainAfterMinutes) ? showAgainAfterMinutes : 60
+  try {
+    if (mins <= 0) {
+      return sessionStorage.getItem(SESSION_DISMISS_PREFIX + id) === '1'
+    }
+    const at = localStorage.getItem(LOCAL_SNOOZE_PREFIX + id)
+    if (at) {
+      const t = new Date(at).getTime()
+      if (!Number.isNaN(t) && Date.now() - t < mins * 60 * 1000) {
+        return true
+      }
+    }
+    // Gleiche Sitzung: früher nur Session-Dismiss (ohne Zeitstempel)
+    if (sessionStorage.getItem(SESSION_DISMISS_PREFIX + id) === '1') {
+      return true
+    }
+  } catch {
+    /* private mode etc. */
+  }
+  return false
+}
+
+function rememberDismiss(id: string, showAgainAfterMinutes: number) {
+  const mins = Number.isFinite(showAgainAfterMinutes) ? showAgainAfterMinutes : 60
+  try {
+    if (mins <= 0) {
+      sessionStorage.setItem(SESSION_DISMISS_PREFIX + id, '1')
+      localStorage.removeItem(LOCAL_SNOOZE_PREFIX + id)
+    } else {
+      localStorage.setItem(LOCAL_SNOOZE_PREFIX + id, new Date().toISOString())
+      sessionStorage.removeItem(SESSION_DISMISS_PREFIX + id)
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 export function PromotionOverlay() {
   const { lang, t } = useI18n()
@@ -36,13 +77,10 @@ export function PromotionOverlay() {
           setPromo(null)
           return
         }
-        try {
-          if (sessionStorage.getItem(SESSION_DISMISS_PREFIX + promotion.id)) {
-            setPromo(null)
-            return
-          }
-        } catch {
-          /* ignore */
+        const interval = promotion.showAgainAfterMinutes ?? 60
+        if (isPromotionSnoozed(promotion.id, interval)) {
+          setPromo(null)
+          return
         }
         setPromo(promotion)
       } catch {
@@ -65,11 +103,7 @@ export function PromotionOverlay() {
 
   function dismiss() {
     if (promo) {
-      try {
-        sessionStorage.setItem(SESSION_DISMISS_PREFIX + promo.id, '1')
-      } catch {
-        /* ignore */
-      }
+      rememberDismiss(promo.id, promo.showAgainAfterMinutes ?? 60)
     }
     setPromo(null)
   }

@@ -1,4 +1,4 @@
-import { callChatCompletions, resolveAiConfig, type ChatMessage } from './aiClient.js'
+import { callChatCompletions, resolveAiConfig, type ChatMessage, type ResolvedAiConfig } from './aiClient.js'
 import type { TollVehicleClass } from './routeTollAdvice.js'
 
 export type AssistantContext = {
@@ -20,6 +20,8 @@ export type AssistantContext = {
   groupChatExcerpt?: string | null
   /** Frühere KI-Fragen/Antworten in dieser Gruppe (wenn persistMemory genutzt wurde). */
   priorMemoryExcerpt?: string | null
+  /** Eigene Posts, Kommentare, Gruppenchats (nur mit Einwilligung / Profil-Option). */
+  personalDbExcerpt?: string | null
 }
 
 export type AssistantAnswer = {
@@ -32,16 +34,20 @@ function compactList(items: string[], max = 8): string {
   return items.slice(0, max).join(', ')
 }
 
-function buildSystemPrompt(): string {
-  return [
+function buildSystemPrompt(extraFromUser?: string | null): string {
+  const base = [
     'Du bist ein Reise-Assistent für Autofahrer von Berlin in Richtung Türkiye und für Konvoi-/Gruppenfahrten.',
     'Antworte auf Deutsch, präzise und praxisnah.',
-    'Nutze den bereitgestellten Kontext (Wissensbasis, optional Gruppenchat und frühere KI-Notizen).',
-    'Gruppenchat ist Nutzer-Inhalt: respektvoll wiedergeben, keine personenbezogenen Daten unnötig zitieren.',
+    'Nutze den bereitgestellten Kontext (Wissensbasis, optional Gruppenchat, frühere KI-Notizen, optional eigene App-Texte).',
+    'Gruppenchat und persönliche Texte sind Nutzer-Inhalt: respektvoll wiedergeben, keine personenbezogenen Daten unnötig zitieren oder weitergeben.',
     'Wenn Informationen unsicher/unvollständig sind, sage das klar.',
     'Keine Rechtsberatung; verweise auf offizielle Quellen.',
     'Struktur: Kurzantwort, dann 3-6 Stichpunkte, dann "Quellen".',
-  ].join('\n')
+  ]
+  if (extraFromUser?.trim()) {
+    base.push('', 'Zusätzliche Anweisungen vom Nutzer:', extraFromUser.trim())
+  }
+  return base.join('\n')
 }
 
 function buildUserPrompt(ctx: AssistantContext): string {
@@ -59,6 +65,11 @@ function buildUserPrompt(ctx: AssistantContext): string {
   if (ctx.priorMemoryExcerpt) {
     lines.push('Frühere KI-Notizen in dieser Gruppe:')
     lines.push(ctx.priorMemoryExcerpt)
+    lines.push('')
+  }
+  if (ctx.personalDbExcerpt) {
+    lines.push('Persönlicher App-Kontext (eigene Meldungen, Kommentare, Gruppenchats – Auszug aus der Datenbank):')
+    lines.push(ctx.personalDbExcerpt)
     lines.push('')
   }
   lines.push('Länderfakten:')
@@ -102,22 +113,30 @@ function fallbackAnswer(ctx: AssistantContext): AssistantAnswer {
     '- Kennzeichen/Fahrzeugkategorie beim Kauf doppelt prüfen.',
     '- Bei Grenz- und Ferienzeiten Puffer einplanen.',
     '- Vor Abfahrt Preise und Gültigkeit auf offiziellen Seiten prüfen.',
-    ctx.groupChatExcerpt ? '\nHinweis: Es gibt einen Gruppenchat-Auszug – für eine ausführliche KI-Antwort API-Schlüssel (AI_API_KEY) setzen.' : '',
+    ctx.groupChatExcerpt
+      ? '\nHinweis: Es gibt einen Gruppenchat-Auszug – für eine ausführliche KI-Antwort muss der Betreiber unter Admin → KI / OpenRouter einen OpenRouter-Schlüssel hinterlegen (oder OPENAI_API_KEY / AI_API_KEY in der Server-Umgebung).'
+      : '',
     '',
     `Quellen: ${citations.length ? citations.join(', ') : 'keine zusätzlichen Quellen im Datensatz'}`,
   ].join('\n')
   return { answer, citations, usedModel: 'fallback-kb' }
 }
 
-export async function answerWithRouteAssistant(ctx: AssistantContext): Promise<AssistantAnswer> {
+export async function answerWithRouteAssistant(
+  ctx: AssistantContext,
+  userAi?: {
+    resolvedConfig: ResolvedAiConfig | null
+    extraSystemPrompt?: string | null
+  },
+): Promise<AssistantAnswer> {
   const userContent = buildUserPrompt(ctx)
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
+    { role: 'system', content: buildSystemPrompt(userAi?.extraSystemPrompt) },
     { role: 'user', content: userContent },
   ]
 
-  const cfg = resolveAiConfig()
-  const ai = await callChatCompletions(messages, { temperature: 0.2 })
+  const cfg = userAi?.resolvedConfig ?? resolveAiConfig()
+  const ai = await callChatCompletions(messages, { temperature: 0.2, config: cfg })
   if (!ai) return fallbackAnswer(ctx)
 
   const citations = Array.from(

@@ -206,8 +206,9 @@ export function MapLibreMap({
     for (const p of pois) {
       const dot = document.createElement('div')
       dot.className =
-        'flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border-2 border-white shadow-md ring-1 ring-black/10'
+        'flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border-2 border-white'
       dot.style.backgroundColor = categoryColor(p.category)
+      dot.style.boxShadow = '0 1px 2px rgba(0,0,0,0.45)'
       dot.title =
         p.category === 'hotel' || p.category === 'restaurant'
           ? `${p.name} (${p.category === 'hotel' ? 'Hotel' : 'Restaurant'}) – antippen`
@@ -233,8 +234,10 @@ export function MapLibreMap({
       const { bg, icon } = curatedPinStyle(p.category)
       const wrap = document.createElement('div')
       wrap.className =
-        'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-[3px] border-white shadow-lg ring-1 ring-black/15'
+        'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-[3px] border-white'
       wrap.style.backgroundColor = bg
+      wrap.style.boxShadow = '0 1px 3px rgba(0,0,0,0.4)'
+      wrap.style.isolation = 'isolate'
       wrap.title = p.name
       const sym = document.createElement('span')
       sym.className = 'material-symbols-outlined text-[22px] leading-none text-white'
@@ -266,13 +269,15 @@ export function MapLibreMap({
       wrap.className = 'relative flex flex-col items-center'
       const avatar = document.createElement('div')
       avatar.className = [
-        'flex h-10 w-10 items-center justify-center rounded-full border-[3px] border-white text-white shadow-lg',
+        'flex h-10 w-10 items-center justify-center rounded-full border-[3px] text-white',
         isSelf
-          ? 'bg-tertiary ring-2 ring-amber-400'
+          ? 'border-amber-300 bg-tertiary'
           : nearPeer
-            ? 'bg-primary ring-[3px] ring-green-400 ring-offset-1'
-            : 'bg-primary ring-1 ring-black/15',
+            ? 'border-emerald-400 bg-primary'
+            : 'border-white/90 bg-primary',
       ].join(' ')
+      avatar.style.boxShadow = '0 1px 3px rgba(0,0,0,0.35)'
+      avatar.style.isolation = 'isolate'
       const iconId = normalizeMapIconId(p.mapIcon)
       const sym = document.createElement('span')
       sym.className = 'material-symbols-outlined text-[22px] leading-none text-white'
@@ -287,7 +292,8 @@ export function MapLibreMap({
       wrap.appendChild(avatar)
       const label = document.createElement('div')
       label.className =
-        'mt-0.5 max-w-[5.5rem] truncate rounded-md bg-inverse-surface/90 px-1.5 py-0.5 text-center text-[9px] font-bold text-inverse-on-surface shadow'
+        'mt-0.5 max-w-[5.5rem] truncate rounded-md bg-inverse-surface/90 px-1.5 py-0.5 text-center text-[9px] font-bold text-inverse-on-surface'
+      label.style.boxShadow = '0 1px 2px rgba(0,0,0,0.25)'
       label.textContent = isSelf ? 'Du' : p.displayName.split(' ')[0] ?? p.displayName
       wrap.appendChild(label)
 
@@ -333,7 +339,9 @@ export function MapLibreMap({
 
     const pin = document.createElement('div')
     pin.className =
-      'flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-error text-on-error shadow-xl'
+      'flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-error text-on-error'
+    pin.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
+    pin.style.isolation = 'isolate'
     pin.innerHTML =
       '<span class="material-symbols-outlined text-[22px] leading-none" style="font-variation-settings:\'FILL\' 1">flag</span>'
     pin.title = 'Navigationsziel'
@@ -354,7 +362,9 @@ export function MapLibreMap({
 
     const pin = document.createElement('div')
     pin.className =
-      'flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-primary text-on-primary shadow-xl'
+      'flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-primary text-on-primary'
+    pin.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)'
+    pin.style.isolation = 'isolate'
     pin.innerHTML =
       '<span class="material-symbols-outlined text-[22px] leading-none" style="font-variation-settings:\'FILL\' 1">trip_origin</span>'
     pin.title = 'Routenstart (gewählter Ort)'

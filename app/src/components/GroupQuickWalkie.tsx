@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { useRadioPlayer } from '../context/RadioPlayerContext'
 import { useWebmVoiceRecord } from '../hooks/useWebmVoiceRecord'
@@ -370,36 +371,41 @@ export function GroupQuickWalkie({ token, user, groups, mapGroupFilter, dock = '
                 </span>
               </button>
             </div>
-            {dockSheetOpen ? (
-              <div
-                className="fixed inset-0 z-[200] flex flex-col justify-end bg-black/50"
-                role="dialog"
-                aria-modal
-                aria-label="Gruppen-Funk"
-              >
-                <button
-                  type="button"
-                  className="min-h-0 flex-1 cursor-default"
-                  aria-label="Schließen"
-                  onClick={() => setDockSheetOpen(false)}
-                />
-                <div className="max-h-[min(82dvh,560px)] overflow-y-auto rounded-t-[1.75rem] border border-outline-variant/50 bg-surface-container-lowest px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.2)]">
-                  <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-outline-variant/60" aria-hidden />
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <p className="text-base font-black text-on-surface">Gruppen-Funk</p>
+            {dockSheetOpen
+              ? createPortal(
+                  <div
+                    className="fixed inset-0 z-[220] flex flex-col justify-end bg-black/50"
+                    role="dialog"
+                    aria-modal
+                    aria-label="Gruppen-Funk"
+                  >
                     <button
                       type="button"
-                      onClick={() => setDockSheetOpen(false)}
-                      className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high"
+                      className="min-h-0 flex-1 cursor-default"
                       aria-label="Schließen"
-                    >
-                      <span className="material-symbols-outlined text-xl">close</span>
-                    </button>
-                  </div>
-                  <div className="pointer-events-auto flex flex-col items-stretch gap-2">{content}</div>
-                </div>
-              </div>
-            ) : null}
+                      onClick={() => setDockSheetOpen(false)}
+                    />
+                    <div className="max-h-[min(82dvh,560px)] min-h-[18rem] w-full shrink-0 overflow-y-auto overflow-x-hidden rounded-t-[1.75rem] border border-outline-variant/50 bg-surface-container-lowest px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.2)]">
+                      <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-outline-variant/60" aria-hidden />
+                      <div className="mb-3 flex min-w-0 items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-base font-black text-on-surface">Gruppen-Funk</p>
+                        <button
+                          type="button"
+                          onClick={() => setDockSheetOpen(false)}
+                          className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high"
+                          aria-label="Schließen"
+                        >
+                          <span className="material-symbols-outlined text-xl">close</span>
+                        </button>
+                      </div>
+                      <div className="pointer-events-auto flex min-h-[10rem] flex-col items-stretch gap-2 text-on-surface">
+                        {content}
+                      </div>
+                    </div>
+                  </div>,
+                  document.body,
+                )
+              : null}
           </>
         )
       }

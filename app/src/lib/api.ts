@@ -1,14 +1,33 @@
 /**
  * Relativer Pfad `/api` (Dev-Proxy, Web hinter Reverse-Proxy) oder absolute Basis
  * wenn `VITE_API_BASE_URL` gesetzt (z. B. Android-APK / Capacitor).
+ *
+ * `VITE_API_MODE=local` → immer relativer `/api` (lokaler API-Server via Vite-Proxy oder gleicher Host).
+ * `VITE_API_MODE=online` → nutzt `VITE_API_BASE_URL` (Produktions-/Remote-API).
+ * Ohne Modus: bisheriges Verhalten (gesetzte `VITE_API_BASE_URL` zählt).
  */
 import { downsampleLineStringForApi } from './routeGeometryApi'
 
-function apiBasePrefix(): string {
-  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
-  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
-    return `${raw.trim().replace(/\/$/, '')}/api`
+function effectiveApiOrigin(): string | undefined {
+  const mode = (import.meta.env.VITE_API_MODE as string | undefined)?.trim().toLowerCase()
+  const raw = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
+
+  if (mode === 'local' || mode === 'localhost' || mode === 'dev') {
+    return undefined
   }
+  if (mode === 'online' || mode === 'remote' || mode === 'production' || mode === 'prod') {
+    if ((!raw || raw.length === 0) && import.meta.env.DEV) {
+      console.warn('[api] VITE_API_MODE=online, aber VITE_API_BASE_URL ist leer')
+    }
+    return raw && raw.length > 0 ? raw.replace(/\/$/, '') : undefined
+  }
+  if (raw && raw.length > 0) return raw.replace(/\/$/, '')
+  return undefined
+}
+
+function apiBasePrefix(): string {
+  const origin = effectiveApiOrigin()
+  if (origin) return `${origin}/api`
   return '/api'
 }
 
@@ -119,13 +138,11 @@ export type PostDto = {
   author: { id: string; displayName: string; mapIcon?: string }
 }
 
-/** Bild/Video-URL für <img>/<video> (lokal oder VITE_API_BASE_URL). */
+/** Bild/Video-URL für <img>/<video> (lokal oder effektive API-Basis). */
 export function postMediaSrc(mediaUrl: string | null | undefined): string | null {
   if (!mediaUrl) return null
-  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
-  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
-    return `${raw.trim().replace(/\/$/, '')}${mediaUrl}`
-  }
+  const origin = effectiveApiOrigin()
+  if (origin) return `${origin}${mediaUrl}`
   return mediaUrl
 }
 
@@ -215,11 +232,11 @@ export type MapParticipantDto = {
   updatedAt: string
 }
 
-/** WebSocket-URL (Vite-Proxy, gleicher Host in Web-Prod, oder `VITE_API_BASE_URL`). */
+/** WebSocket-URL (Vite-Proxy, gleicher Host in Web-Prod, oder effektive API-Basis). */
 export function websocketUrl(token: string): string {
-  const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
-  if (raw && typeof raw === 'string' && raw.trim().length > 0) {
-    const u = new URL(raw.trim())
+  const origin = effectiveApiOrigin()
+  if (origin) {
+    const u = new URL(origin)
     const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${wsProto}//${u.host}/api/ws?token=${encodeURIComponent(token)}`
   }
@@ -579,6 +596,60 @@ export async function askRouteAssistant(
     token: opts?.token ?? undefined,
     body: JSON.stringify(payload),
     signal: opts?.signal,
+  })
+}
+
+export type ProfileAiSettingsDto = {
+  aiSystemPrompt: string | null
+  aiIncludeFullContext: boolean
+}
+
+export async function fetchProfileAi(token: string) {
+  return apiFetch<ProfileAiSettingsDto>('/profile/ai', { token })
+}
+
+export async function saveProfileAi(
+  token: string,
+  body: {
+    aiSystemPrompt?: string | null
+    aiIncludeFullContext?: boolean
+  },
+) {
+  return apiFetch<ProfileAiSettingsDto & { ok?: boolean }>('/profile/ai', {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(body),
+  })
+}
+
+export type OpenRouterModelOption = { id: string; label: string }
+
+export type AdminAiSettingsDto = {
+  hasApiKey: boolean
+  apiKeyLast4: string | null
+  aiModel: string | null
+  openRouterApiBase: string
+  availableModels: OpenRouterModelOption[]
+  defaultExtraSystemPrompt: string | null
+}
+
+export async function fetchAdminAiSettings(token: string) {
+  return apiFetch<AdminAiSettingsDto>('/admin/ai-settings', { token })
+}
+
+export async function saveAdminAiSettings(
+  token: string,
+  body: {
+    aiModel?: string | null
+    openaiApiKey?: string
+    clearApiKey?: boolean
+    defaultExtraSystemPrompt?: string | null
+  },
+) {
+  return apiFetch<AdminAiSettingsDto & { ok?: boolean }>('/admin/ai-settings', {
+    method: 'PUT',
+    token,
+    body: JSON.stringify(body),
   })
 }
 
@@ -1147,6 +1218,8 @@ export type ActivePromotionDto = {
   ctaUrl: string
   startsAt: string
   endsAt: string
+  /** Minuten bis zur erneuten Anzeige nach Schließen; 0 = nur bis Sitzungsende (Tab). */
+  showAgainAfterMinutes: number
 }
 
 export async function fetchActivePromotion(lang: 'de' | 'tr' | 'en') {
@@ -1179,6 +1252,7 @@ export type PromotionCampaignAdminDto = {
   endsAt: string
   isActive: boolean
   priority: number
+  showAgainAfterMinutes: number
   impressionCount: number
   clickCount: number
   createdAt: string
@@ -1208,6 +1282,7 @@ export async function createAdminPromotion(
     endsAt: string
     isActive?: boolean
     priority?: number
+    showAgainAfterMinutes?: number
   },
 ) {
   return apiFetch<{ campaign: PromotionCampaignAdminDto }>('/admin/promotions', {
@@ -1237,6 +1312,7 @@ export async function patchAdminPromotion(
     endsAt: string
     isActive: boolean
     priority: number
+    showAgainAfterMinutes?: number
   }>,
 ) {
   return apiFetch<{ campaign: PromotionCampaignAdminDto }>(`/admin/promotions/${id}`, {

@@ -1453,8 +1453,13 @@ export function MapDashboardPage() {
 
   const mapLeftSheetBottomStyle = useMemo((): CSSProperties => ({ bottom: `calc(${BOTTOM_NAV_CSS} + 0.75rem)` }), [])
 
+  const mainHeightStyle = useMemo(
+    (): CSSProperties => ({ height: `calc(100dvh - 72px - ${BOTTOM_NAV_CSS})` }),
+    [],
+  )
+
   return (
-    <main className="relative h-[calc(100dvh-72px-96px)] w-full overflow-hidden">
+    <main className="relative w-full overflow-hidden" style={mainHeightStyle}>
       <div className="absolute inset-0 z-0 bg-surface-container">
         <MapLibreMap
           className="h-full w-full [&_.maplibregl-ctrl-top-left]:!mt-2 [&_.maplibregl-ctrl-top-left]:!ml-2 [&_.maplibregl-ctrl-attrib]:!text-[10px] [&_.maplibregl-ctrl-attrib]:!bg-surface-container-lowest/90"
@@ -1749,8 +1754,12 @@ export function MapDashboardPage() {
                 <div className="mt-3 border-t border-outline-variant/25 pt-3">
                   <p className="text-[0.65rem] font-bold uppercase tracking-wide text-on-surface-variant">Reise-KI</p>
                   <p className="mt-0.5 text-[11px] text-on-surface-variant">
-                    Frage zu Route, Ländern oder Maut – nutzt dasselbe Modell wie unter „Routen-Optionen“ (
-                    <code className="rounded bg-surface-container-high px-0.5 text-[10px]">AI_MODEL</code> / API).
+                    Frage zu Route, Ländern oder Maut. Modell und API-Schlüssel konfiguriert der Betrieb unter Admin →
+                    KI / OpenRouter (oder Server-.env). Persönlicher Zusatz-Prompt:{' '}
+                    <Link to="/profile" className="font-semibold text-primary underline">
+                      Profil
+                    </Link>
+                    .
                   </p>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                     <input

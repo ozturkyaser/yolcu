@@ -18,7 +18,11 @@ import {
   productsForCountries,
   type TollVehicleClass,
 } from './routeTollAdvice.js'
+import { resolveAiConfigWithUserOverride, type ResolvedAiConfig } from './aiClient.js'
+import { getAdminAiDefaultsForMerge } from './adminAiSettingsDb.js'
 import { answerWithRouteAssistant } from './routeAssistant.js'
+import { buildPersonalDbExcerpt } from './userAiPersonalContext.js'
+import { decryptUserAiSecret } from './userAiCrypto.js'
 import { registerAdminAndCuratedRoutes } from './adminRoutes.js'
 import { registerVignetteServiceRoutes } from './vignetteServiceRoutes.js'
 import { registerRideShareRoutes } from './rideShareRoutes.js'
@@ -434,6 +438,65 @@ async function buildServer() {
       [request.user.sub],
     )
     return { user: mapUser(u.rows[0]) }
+  })
+
+  app.get('/api/profile/ai', { preHandler: authenticate }, async (request, reply) => {
+    const r = await pool.query<{
+      ai_system_prompt: string | null
+      ai_include_full_context: boolean
+    }>(
+      `SELECT ai_system_prompt, ai_include_full_context
+       FROM users WHERE id = $1`,
+      [request.user.sub],
+    )
+    const row = r.rows[0]
+    if (!row) return reply.status(404).send({ error: 'Nicht gefunden' })
+    return {
+      aiSystemPrompt: row.ai_system_prompt,
+      aiIncludeFullContext: row.ai_include_full_context,
+    }
+  })
+
+  app.put('/api/profile/ai', { preHandler: authenticate }, async (request, reply) => {
+    const schema = z.object({
+      aiSystemPrompt: z.union([z.string().max(8000), z.null()]).optional(),
+      aiIncludeFullContext: z.boolean().optional(),
+    })
+    const parsed = schema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    const { aiSystemPrompt, aiIncludeFullContext } = parsed.data
+
+    const sets: string[] = []
+    const vals: unknown[] = []
+    let i = 1
+
+    if (aiSystemPrompt !== undefined) {
+      sets.push(`ai_system_prompt = $${i++}`)
+      vals.push(aiSystemPrompt?.trim() || null)
+    }
+    if (aiIncludeFullContext !== undefined) {
+      sets.push(`ai_include_full_context = $${i++}`)
+      vals.push(aiIncludeFullContext)
+    }
+
+    if (sets.length === 0) {
+      return reply.status(400).send({ error: 'Keine Felder zum Aktualisieren' })
+    }
+
+    vals.push(request.user.sub)
+    await pool.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${i}`, vals)
+
+    const r = await pool.query<{
+      ai_system_prompt: string | null
+      ai_include_full_context: boolean
+    }>(`SELECT ai_system_prompt, ai_include_full_context FROM users WHERE id = $1`, [request.user.sub])
+    const row = r.rows[0]!
+    return {
+      ok: true,
+      aiSystemPrompt: row.ai_system_prompt,
+      aiIncludeFullContext: row.ai_include_full_context,
+    }
   })
 
   app.post('/api/vehicles', { preHandler: authenticate }, async (request, reply) => {
@@ -856,6 +919,77 @@ async function buildServer() {
       }
     }
 
+    let sessionUserId: string | null = authedUserId
+    if (!sessionUserId) {
+      try {
+        await request.jwtVerify()
+        sessionUserId = request.user.sub
+      } catch {
+        sessionUserId = null
+      }
+    }
+
+    let personalDbExcerpt: string | null = null
+    let userAiPayload:
+      | {
+          resolvedConfig: ResolvedAiConfig | null
+          extraSystemPrompt?: string | null
+        }
+      | undefined
+
+    const adminAi = await getAdminAiDefaultsForMerge(pool)
+
+    if (sessionUserId) {
+      const ur = await pool.query<{
+        ai_model: string | null
+        ai_api_key_encrypted: string | null
+        ai_system_prompt: string | null
+        ai_include_full_context: boolean
+      }>(
+        `SELECT ai_model, ai_api_key_encrypted, ai_system_prompt, ai_include_full_context
+         FROM users WHERE id = $1::uuid`,
+        [sessionUserId],
+      )
+      const row = ur.rows[0]
+      if (row) {
+        const decKey = row.ai_api_key_encrypted ? decryptUserAiSecret(row.ai_api_key_encrypted) : null
+        const extraParts = [adminAi.defaultExtraPrompt, row.ai_system_prompt].filter((x) => x?.trim())
+        userAiPayload = {
+          resolvedConfig: resolveAiConfigWithUserOverride({
+            admin: {
+              apiKey: adminAi.apiKey,
+              model: adminAi.model,
+            },
+            user: {
+              apiKey: decKey,
+              model: row.ai_model,
+            },
+          }),
+          extraSystemPrompt: extraParts.length ? extraParts.join('\n\n') : null,
+        }
+        if (row.ai_include_full_context) {
+          const maxC = Math.min(
+            120_000,
+            Math.max(4000, Number(process.env.AI_USER_CONTEXT_MAX_CHARS ?? 48_000) || 48_000),
+          )
+          personalDbExcerpt = await buildPersonalDbExcerpt(pool, sessionUserId, maxC)
+        }
+      }
+    }
+
+    if (!userAiPayload) {
+      userAiPayload = {
+        resolvedConfig: resolveAiConfigWithUserOverride({
+          admin: {
+            apiKey: adminAi.apiKey,
+            model: adminAi.model,
+          },
+          user: null,
+        }),
+        extraSystemPrompt: adminAi.defaultExtraPrompt?.trim() || null,
+      }
+    }
+
     const ua =
       process.env.GEOCODING_USER_AGENT?.trim() ||
       'YolArkadasim/1.0 (dev@yol.local; setze GEOCODING_USER_AGENT in .env laut OSM-Nominatim)'
@@ -946,7 +1080,8 @@ async function buildServer() {
         })),
         groupChatExcerpt: groupChatExcerpt ?? undefined,
         priorMemoryExcerpt: priorMemoryExcerpt ?? undefined,
-      })
+        personalDbExcerpt: personalDbExcerpt ?? undefined,
+      }, userAiPayload)
 
       if (parsed.data.saveMemory && parsed.data.groupId && authedUserId) {
         try {

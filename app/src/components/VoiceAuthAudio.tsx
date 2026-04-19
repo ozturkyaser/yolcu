@@ -73,7 +73,7 @@ export function VoiceAuthAudio({ voicePath, token, className }: Props) {
       src={url}
       controls
       preload="none"
-      className={className ?? 'mt-1 h-9 w-full max-w-xs'}
+      className={className ?? 'mt-1 h-9 min-h-9 w-full min-w-0 max-w-full sm:max-w-xs'}
       onPlay={() => setDuck(true)}
       onPause={() => setDuck(false)}
       onEnded={() => setDuck(false)}

@@ -23,6 +23,7 @@ function mapPromotionRow(row: Record<string, unknown>) {
     endsAt: row.ends_at as string,
     isActive: row.is_active as boolean,
     priority: row.priority as number,
+    showAgainAfterMinutes: Number(row.show_again_after_minutes ?? 60),
     impressionCount: Number(row.impression_count),
     clickCount: Number(row.click_count),
     createdAt: row.created_at as string,
@@ -51,7 +52,7 @@ export async function registerPromotionRoutes(app: FastifyInstance) {
       `SELECT id, internal_name, headline_de, headline_tr, headline_en,
               body_de, body_tr, body_en, image_url,
               cta_label_de, cta_label_tr, cta_label_en, cta_url,
-              starts_at, ends_at, is_active, priority,
+              starts_at, ends_at, is_active, priority, show_again_after_minutes,
               impression_count, click_count, created_at, updated_at
        FROM promotion_campaigns
        WHERE is_active = true
@@ -81,6 +82,7 @@ export async function registerPromotionRoutes(app: FastifyInstance) {
         ctaUrl: m.ctaUrl.trim(),
         startsAt: m.startsAt,
         endsAt: m.endsAt,
+        showAgainAfterMinutes: m.showAgainAfterMinutes,
       },
     }
   })

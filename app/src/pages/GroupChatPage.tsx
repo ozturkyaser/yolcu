@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { VoiceAuthAudio } from '../components/VoiceAuthAudio'
 import { usePttPlayback, startPttStream, type PttStreamHandle } from '../hooks/useVoicePtt'
@@ -52,6 +60,9 @@ function formatTime(iso: string) {
 const LS_PTT_NEARBY = 'yol_ptt_nearby_only'
 const LS_WALKIE_ARMED = 'yol_walkie_armed'
 const PTT_LONG_PRESS_MS = 650
+
+/** Gleiche Logik wie Karte: Höhe unter Header abzüglich gemessener Bottom-Navigation. */
+const BOTTOM_NAV_CSS = 'var(--bottom-nav-height, 6rem)'
 
 const CONVOY_STATUS_LABEL: Record<ConvoyStatus, string> = {
   driving: 'Unterwegs',
@@ -486,10 +497,15 @@ export function GroupChatPage() {
 
   if (!user || !id) return null
 
+  const mainHeightStyle = useMemo(
+    (): CSSProperties => ({ height: `calc(100dvh - 72px - ${BOTTOM_NAV_CSS})` }),
+    [],
+  )
+
   return (
     <>
       <div className="fixed top-[72px] left-0 z-40 h-1 w-full bg-gradient-to-r from-primary via-tertiary to-primary opacity-80" />
-      <main className="flex h-[calc(100dvh-72px-96px)] flex-col">
+      <main className="flex min-h-0 flex-col" style={mainHeightStyle}>
         <header className="shrink-0 border-b border-outline-variant/30 px-4 py-3">
           <div className="mx-auto flex max-w-2xl items-center gap-3">
             <Link
@@ -596,9 +612,13 @@ export function GroupChatPage() {
           <div className="mx-auto max-w-2xl">
             <p className="text-[0.65rem] font-bold uppercase tracking-wide text-primary">Reise-KI (Gruppe)</p>
             <p className="mt-0.5 text-[11px] leading-snug text-on-surface-variant">
-              Nutzt eure Textnachrichten, frühere KI-Notizen (wenn gespeichert) und die Reise-Wissensbasis. Modell und API-URL
-              kommen aus der Server-<code className="text-[10px]">.env</code> (<code className="text-[10px]">AI_MODEL</code>,{' '}
-              <code className="text-[10px]">AI_API_KEY</code>).
+              Nutzt eure Textnachrichten, frühere KI-Notizen (wenn gespeichert) und die Reise-Wissensbasis. Modell und
+              API-Schlüssel legt der Betrieb zentral unter Admin → KI / OpenRouter fest (OpenRouter; oder OPENAI_API_KEY /
+              AI_API_KEY auf dem Server). Einen persönlichen Zusatz-Prompt kannst du unter{' '}
+              <Link to="/profile" className="font-semibold text-primary underline">
+                Profil
+              </Link>{' '}
+              eintragen.
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
               <input
@@ -662,7 +682,11 @@ export function GroupChatPage() {
                     {m.body?.trim() ? (
                       <p className="whitespace-pre-wrap text-sm text-on-surface-variant">{m.body}</p>
                     ) : null}
-                    <VoiceAuthAudio voicePath={m.voiceUrl} token={token} />
+                    <VoiceAuthAudio
+                      voicePath={m.voiceUrl}
+                      token={token}
+                      className="mt-1 h-10 min-h-10 w-full min-w-0 max-w-full"
+                    />
                     {m.voiceDurationMs != null ? (
                       <p className="text-[10px] text-on-surface-variant">
                         {(m.voiceDurationMs / 1000).toFixed(1)} s
@@ -703,7 +727,7 @@ export function GroupChatPage() {
             Live-Funk: Taste halten und sprechen; lange halten (~0,7 s) sperrt offenes Mikrofon bis Beenden oder erneuter
             Funk-Tipp. Sprachnachricht: Aufnahme antippen, erneut zum Senden.
           </p>
-          <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2">
+          <div className="mx-auto flex max-w-2xl flex-col gap-2">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -714,73 +738,75 @@ export function GroupChatPage() {
                 }
               }}
               placeholder="Nachricht…"
-              className="min-w-0 flex-[1_1_12rem] rounded-2xl border border-outline-variant bg-surface px-4 py-3 text-on-surface"
+              className="min-h-[3rem] w-full min-w-0 rounded-2xl border border-outline-variant bg-surface px-4 py-3 text-on-surface"
               maxLength={4000}
             />
-            <button
-              type="button"
-              disabled={!walkieArmed}
-              onPointerDown={(e) => void handlePttButtonDown(e)}
-              onPointerUp={handlePttButtonUp}
-              onPointerCancel={handlePttButtonCancel}
-              style={{ touchAction: 'none' }}
-              className={`flex h-12 w-12 shrink-0 touch-none items-center justify-center rounded-2xl text-white active:scale-95 disabled:opacity-40 ${
-                pttLatchedUi
-                  ? 'bg-error ring-2 ring-error/50'
-                  : pttLiveUi
-                    ? 'bg-tertiary ring-2 ring-white/40'
-                    : 'bg-tertiary'
-              }`}
-              aria-label={
-                pttLatchedUi
-                  ? 'Walkie-Talkie: angetippt zum Beenden des Dauerfunks'
-                  : 'Walkie-Talkie: halten und sprechen, lange halten zum Sperren'
-              }
-              title={
-                walkieArmed
-                  ? 'Halten = sprechen · lange halten = Mikro offen bis Beenden · antippen beendet Dauerfunk'
-                  : 'Walkie zuerst aktivieren (Checkbox oben)'
-              }
-            >
-              <span
-                className="material-symbols-outlined text-2xl"
-                style={{ fontVariationSettings: pttLiveUi || pttLatchedUi ? "'FILL' 1" : "'FILL' 0" }}
-                aria-hidden
-              >
-                {pttLiveUi || pttLatchedUi ? 'mic' : 'radio'}
-              </span>
-            </button>
-            {pttLiveUi || pttLatchedUi ? (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => releasePttAll()}
-                className="shrink-0 rounded-2xl border-2 border-error bg-surface px-4 py-3 text-sm font-bold text-error"
+                disabled={!walkieArmed}
+                onPointerDown={(e) => void handlePttButtonDown(e)}
+                onPointerUp={handlePttButtonUp}
+                onPointerCancel={handlePttButtonCancel}
+                style={{ touchAction: 'none' }}
+                className={`flex h-12 w-12 shrink-0 touch-none items-center justify-center rounded-2xl text-white active:scale-95 disabled:opacity-40 ${
+                  pttLatchedUi
+                    ? 'bg-error ring-2 ring-error/50'
+                    : pttLiveUi
+                      ? 'bg-tertiary ring-2 ring-white/40'
+                      : 'bg-tertiary'
+                }`}
+                aria-label={
+                  pttLatchedUi
+                    ? 'Walkie-Talkie: angetippt zum Beenden des Dauerfunks'
+                    : 'Walkie-Talkie: halten und sprechen, lange halten zum Sperren'
+                }
+                title={
+                  walkieArmed
+                    ? 'Halten = sprechen · lange halten = Mikro offen bis Beenden · antippen beendet Dauerfunk'
+                    : 'Walkie zuerst aktivieren (Checkbox oben)'
+                }
               >
-                Funk beenden
+                <span
+                  className="material-symbols-outlined text-2xl"
+                  style={{ fontVariationSettings: pttLiveUi || pttLatchedUi ? "'FILL' 1" : "'FILL' 0" }}
+                  aria-hidden
+                >
+                  {pttLiveUi || pttLatchedUi ? 'mic' : 'radio'}
+                </span>
               </button>
-            ) : null}
-            <button
-              type="button"
-              disabled={voiceBusy}
-              onClick={() => void toggleVoiceNote()}
-              className={
-                isRecording
-                  ? 'flex h-12 shrink-0 items-center gap-1 rounded-2xl bg-error px-3 py-2 text-sm font-bold text-on-error'
-                  : 'flex h-12 shrink-0 items-center gap-1 rounded-2xl border border-outline-variant bg-surface-container-high px-3 py-2 text-sm font-bold text-on-surface'
-              }
-            >
-              <span className="material-symbols-outlined text-xl">
-                {isRecording ? 'stop_circle' : 'fiber_manual_record'}
-              </span>
-              {isRecording ? 'Senden' : 'Sprache'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void send()}
-              className="shrink-0 rounded-2xl bg-primary px-5 py-3 font-bold text-on-primary"
-            >
-              Senden
-            </button>
+              {pttLiveUi || pttLatchedUi ? (
+                <button
+                  type="button"
+                  onClick={() => releasePttAll()}
+                  className="min-h-12 shrink-0 rounded-2xl border-2 border-error bg-surface px-3 py-2 text-sm font-bold text-error sm:px-4"
+                >
+                  Funk beenden
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={voiceBusy}
+                onClick={() => void toggleVoiceNote()}
+                className={
+                  isRecording
+                    ? 'flex min-h-12 shrink-0 items-center gap-1 rounded-2xl bg-error px-3 py-2 text-sm font-bold text-on-error'
+                    : 'flex min-h-12 shrink-0 items-center gap-1 rounded-2xl border border-outline-variant bg-surface-container-high px-3 py-2 text-sm font-bold text-on-surface'
+                }
+              >
+                <span className="material-symbols-outlined text-xl">
+                  {isRecording ? 'stop_circle' : 'fiber_manual_record'}
+                </span>
+                {isRecording ? 'Senden' : 'Sprache'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void send()}
+                className="ml-auto min-h-12 shrink-0 rounded-2xl bg-primary px-5 py-3 font-bold text-on-primary"
+              >
+                Senden
+              </button>
+            </div>
           </div>
         </footer>
       </main>

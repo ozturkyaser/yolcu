@@ -37,6 +37,7 @@ const emptyForm = {
   endsAtLocal: '',
   isActive: true,
   priority: '0',
+  showAgainAfterMinutes: '60',
 }
 
 type FormState = typeof emptyForm
@@ -96,6 +97,7 @@ export function AdminPromotionsPage() {
       endsAtLocal: isoToDatetimeLocal(p.endsAt),
       isActive: p.isActive,
       priority: String(p.priority),
+      showAgainAfterMinutes: String(p.showAgainAfterMinutes ?? 60),
     })
     setModal('edit')
   }
@@ -110,6 +112,11 @@ export function AdminPromotionsPage() {
     const pr = parseInt(form.priority, 10)
     if (!Number.isFinite(pr)) {
       setErr('Priorität als Ganzzahl.')
+      return
+    }
+    const interval = parseInt(form.showAgainAfterMinutes, 10)
+    if (!Number.isFinite(interval) || interval < 0 || interval > 10080) {
+      setErr('Anzeige-Intervall: 0–10080 Minuten (0 = nur bis Sitzungsende).')
       return
     }
     if (!form.internalName.trim() || !form.ctaUrl.trim()) {
@@ -146,6 +153,7 @@ export function AdminPromotionsPage() {
         endsAt,
         isActive: form.isActive,
         priority: pr,
+        showAgainAfterMinutes: interval,
       }
       if (modal === 'create') {
         await createAdminPromotion(token, payload)
@@ -179,8 +187,9 @@ export function AdminPromotionsPage() {
         <div>
           <h1 className="text-2xl font-black text-on-surface">Werbung & Hinweise</h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-on-surface-variant">
-            Vollbild-Karten im App-Shell: Zeitfenster, mehrsprachige Texte, klickbarer CTA. Impressionen und Klicks
-            werden serverseitig gezählt (ein Impression beim Anzeigen, Klick über den Button).
+            Vollbild-Karten im App-Shell: Zeitfenster, mehrsprachige Texte, klickbarer CTA. Pro Kampagne ein
+            Anzeige-Intervall: wie lange nach Schließen (oder Klick auf CTA) die Werbung erst wieder erscheint.
+            Impressionen und Klicks werden serverseitig gezählt.
           </p>
         </div>
         <button
@@ -200,6 +209,7 @@ export function AdminPromotionsPage() {
             <tr>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Zeitfenster</th>
+              <th className="px-3 py-2">Intervall</th>
               <th className="px-3 py-2">Aktiv</th>
               <th className="px-3 py-2">Prio</th>
               <th className="px-3 py-2">Impr.</th>
@@ -217,6 +227,9 @@ export function AdminPromotionsPage() {
                   <td className="px-3 py-2 font-semibold">{r.internalName}</td>
                   <td className="px-3 py-2 text-xs text-on-surface-variant">
                     {new Date(r.startsAt).toLocaleString('de-DE')} – {new Date(r.endsAt).toLocaleString('de-DE')}
+                  </td>
+                  <td className="px-3 py-2 text-xs tabular-nums">
+                    {r.showAgainAfterMinutes === 0 ? 'Sitzung' : `${r.showAgainAfterMinutes} min`}
                   </td>
                   <td className="px-3 py-2">{r.isActive ? 'ja' : 'nein'}</td>
                   <td className="px-3 py-2">{r.priority}</td>
@@ -295,6 +308,24 @@ export function AdminPromotionsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
                   className="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm"
                 />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="text-xs font-bold uppercase text-on-surface-variant">
+                  Anzeige-Intervall (Minuten)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={10080}
+                  step={1}
+                  value={form.showAgainAfterMinutes}
+                  onChange={(e) => setForm((f) => ({ ...f, showAgainAfterMinutes: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm"
+                />
+                <span className="mt-1 block text-xs text-on-surface-variant">
+                  Zeit nach Schließen oder CTA-Klick, bis die Werbung demselben Gerät wieder angezeigt wird.{' '}
+                  <strong>0</strong> = nur bis zum Schließen des Browser-Tabs (Sitzung). Max. 10080 (7 Tage).
+                </span>
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-bold uppercase text-on-surface-variant">Bild-URL (optional)</span>

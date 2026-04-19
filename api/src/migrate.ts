@@ -57,6 +57,31 @@ async function ensureTollVehicleClassColumn(): Promise<void> {
   `)
 }
 
+async function ensureUserAiColumns(): Promise<void> {
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_model TEXT`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_base_url TEXT`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_api_key_encrypted TEXT`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_system_prompt TEXT`)
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_include_full_context BOOLEAN NOT NULL DEFAULT false`,
+  )
+}
+
+/** Zentrale KI-Konfiguration (OpenAI-kompatibel) für alle Nutzer – nur per Admin-UI. */
+async function ensureAdminAiSettingsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_ai_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      openai_api_key_encrypted TEXT,
+      ai_model TEXT,
+      ai_base_url TEXT,
+      default_extra_system_prompt TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `)
+  await pool.query(`INSERT INTO admin_ai_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`)
+}
+
 async function ensureUserRoleColumn(): Promise<void> {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`)
   await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`)
@@ -477,6 +502,24 @@ async function ensurePromotionCampaignsTable(): Promise<void> {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS promotion_campaigns_window_idx ON promotion_campaigns (is_active, starts_at, ends_at, priority DESC)`,
   )
+  await ensurePromotionShowIntervalColumn()
+}
+
+/** Bestehende DBs: Mindestabstand bis zur erneuten Anzeige nach Schließen (Minuten). */
+async function ensurePromotionShowIntervalColumn(): Promise<void> {
+  const t = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'promotion_campaigns'
+     ) AS ok`,
+  )
+  if (!t.rows[0]?.ok) return
+  await pool.query(
+    `ALTER TABLE promotion_campaigns ADD COLUMN IF NOT EXISTS show_again_after_minutes INTEGER NOT NULL DEFAULT 60`,
+  )
+  await pool.query(
+    `UPDATE promotion_campaigns SET show_again_after_minutes = 60 WHERE show_again_after_minutes IS NULL`,
+  )
 }
 
 async function ensureRadioChannelsTable(): Promise<void> {
@@ -633,6 +676,8 @@ export async function ensureAuthSchemaPatches(): Promise<void> {
      ) AS ok`,
   )
   if (!t.rows[0]?.ok) return
+  await ensureUserAiColumns()
+  await ensureAdminAiSettingsTable()
   await ensureMapIconColumn()
   await ensureTollVehicleClassColumn()
   await ensureMapPoisAndLivePresenceTables()
@@ -662,6 +707,8 @@ export async function ensureAuthSchemaPatches(): Promise<void> {
 export async function runMigrations(): Promise<void> {
   const sql = readFileSync(join(__dirname, 'schema.sql'), 'utf8')
   await pool.query(sql)
+  await ensureUserAiColumns()
+  await ensureAdminAiSettingsTable()
   await ensureVoiceMessageColumns()
   await ensureMapIconColumn()
   await ensureTollVehicleClassColumn()

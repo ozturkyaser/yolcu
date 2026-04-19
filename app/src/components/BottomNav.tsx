@@ -95,7 +95,7 @@ export function BottomNav() {
         </NavLink>
       ))}
 
-      <div className="flex min-h-0 flex-col items-center justify-end pb-0.5">
+      <div className="relative z-[1] flex min-h-0 flex-col items-center justify-end overflow-visible pb-0.5">
         <GroupQuickWalkie
           dock="bottom-nav"
           token={token}

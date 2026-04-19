@@ -4,6 +4,13 @@ import { isMailConfigured, vignetteAdminNotifyEmail } from './mail.js'
 import { getPayPalConfig } from './paypalClient.js'
 import { pool } from './pool.js'
 import { getStripe, publicWebAppBaseUrl } from './stripeClient.js'
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  isAllowedOpenRouterModelId,
+  OPENROUTER_API_BASE,
+  OPENROUTER_MODEL_OPTIONS,
+} from './openrouter.js'
+import { decryptUserAiSecret, encryptUserAiSecret } from './userAiCrypto.js'
 
 async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -179,6 +186,119 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
         paypalReturn: `${base}/profile?vignetteCheckout=paypal_success`,
         paypalCancel: `${base}/profile?vignetteCheckout=paypal_cancel`,
       },
+    }
+  })
+
+  app.get('/api/admin/ai-settings', { preHandler: [authenticate, requireAdmin] }, async (request, reply) => {
+    const r = await pool.query<{
+      openai_api_key_encrypted: string | null
+      ai_model: string | null
+      default_extra_system_prompt: string | null
+    }>(
+      `SELECT openai_api_key_encrypted, ai_model, default_extra_system_prompt
+       FROM admin_ai_settings WHERE id = 1`,
+    )
+    const row = r.rows[0]
+    if (!row) {
+      return reply.status(503).send({ error: 'admin_ai_settings nicht angelegt (Migration fehlt?)' })
+    }
+    let apiKeyLast4: string | null = null
+    if (row.openai_api_key_encrypted) {
+      const dec = decryptUserAiSecret(row.openai_api_key_encrypted)
+      if (dec && dec.length >= 4) apiKeyLast4 = dec.slice(-4)
+    }
+    const storedModel = row.ai_model?.trim() || null
+    const aiModel =
+      storedModel && isAllowedOpenRouterModelId(storedModel) ? storedModel : DEFAULT_OPENROUTER_MODEL
+    return {
+      hasApiKey: Boolean(row.openai_api_key_encrypted && apiKeyLast4),
+      apiKeyLast4,
+      aiModel,
+      openRouterApiBase: OPENROUTER_API_BASE,
+      availableModels: OPENROUTER_MODEL_OPTIONS,
+      defaultExtraSystemPrompt: row.default_extra_system_prompt,
+    }
+  })
+
+  app.put('/api/admin/ai-settings', { preHandler: [authenticate, requireAdmin] }, async (request, reply) => {
+    const schema = z.object({
+      aiModel: z.union([z.string().max(120), z.null()]).optional(),
+      openaiApiKey: z.string().max(800).optional(),
+      clearApiKey: z.boolean().optional(),
+      defaultExtraSystemPrompt: z.union([z.string().max(8000), z.null()]).optional(),
+    })
+    const parsed = schema.safeParse(request.body)
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.flatten() })
+
+    const { aiModel, openaiApiKey, clearApiKey, defaultExtraSystemPrompt } = parsed.data
+
+    if (aiModel != null && aiModel !== '' && !isAllowedOpenRouterModelId(aiModel)) {
+      return reply.status(400).send({ error: 'Modell ist nicht in der erlaubten OpenRouter-Liste' })
+    }
+
+    const sets: string[] = []
+    const vals: unknown[] = []
+    let i = 1
+
+    if (aiModel !== undefined) {
+      sets.push(`ai_model = $${i++}`)
+      vals.push(aiModel?.trim() || null)
+    }
+    if (defaultExtraSystemPrompt !== undefined) {
+      sets.push(`default_extra_system_prompt = $${i++}`)
+      vals.push(defaultExtraSystemPrompt?.trim() || null)
+    }
+
+    if (clearApiKey) {
+      sets.push(`openai_api_key_encrypted = $${i++}`)
+      vals.push(null)
+    } else if (openaiApiKey !== undefined) {
+      const t = openaiApiKey.trim()
+      if (t.length > 0) {
+        const enc = encryptUserAiSecret(t)
+        if (!enc) {
+          return reply.status(503).send({
+            error:
+              'API-Schlüssel kann nicht gespeichert werden (JWT_SECRET oder AI_USER_SECRET für Verschlüsselung setzen).',
+          })
+        }
+        sets.push(`openai_api_key_encrypted = $${i++}`)
+        vals.push(enc)
+      }
+    }
+
+    if (sets.length === 0) {
+      return reply.status(400).send({ error: 'Keine Felder zum Aktualisieren' })
+    }
+    sets.push(`updated_at = now()`)
+
+    await pool.query(`UPDATE admin_ai_settings SET ${sets.join(', ')} WHERE id = 1`, vals)
+
+    const r = await pool.query<{
+      openai_api_key_encrypted: string | null
+      ai_model: string | null
+      default_extra_system_prompt: string | null
+    }>(
+      `SELECT openai_api_key_encrypted, ai_model, default_extra_system_prompt
+       FROM admin_ai_settings WHERE id = 1`,
+    )
+    const row = r.rows[0]!
+    let apiKeyLast4: string | null = null
+    if (row.openai_api_key_encrypted) {
+      const dec = decryptUserAiSecret(row.openai_api_key_encrypted)
+      if (dec && dec.length >= 4) apiKeyLast4 = dec.slice(-4)
+    }
+    const storedModel = row.ai_model?.trim() || null
+    const resolvedModel =
+      storedModel && isAllowedOpenRouterModelId(storedModel) ? storedModel : DEFAULT_OPENROUTER_MODEL
+    return {
+      ok: true,
+      hasApiKey: Boolean(row.openai_api_key_encrypted && apiKeyLast4),
+      apiKeyLast4,
+      aiModel: resolvedModel,
+      openRouterApiBase: OPENROUTER_API_BASE,
+      availableModels: OPENROUTER_MODEL_OPTIONS,
+      defaultExtraSystemPrompt: row.default_extra_system_prompt,
     }
   })
 
@@ -411,6 +531,8 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
     endsAt: z.string().min(1),
     isActive: z.boolean().optional().default(true),
     priority: z.number().int().optional().default(0),
+    /** Nach Schließen/CTA: Mindestabstand bis zur erneuten Anzeige (0 = nur bis Sitzungsende). Max. 7 Tage. */
+    showAgainAfterMinutes: z.number().int().min(0).max(10080).optional().default(60),
   })
 
   function mapPromotionCampaignRow(row: Record<string, unknown>) {
@@ -432,6 +554,7 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
       endsAt: row.ends_at,
       isActive: row.is_active,
       priority: row.priority,
+      showAgainAfterMinutes: Number(row.show_again_after_minutes ?? 60),
       impressionCount: Number(row.impression_count),
       clickCount: Number(row.click_count),
       createdAt: row.created_at,
@@ -444,7 +567,7 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
       `SELECT id, internal_name, headline_de, headline_tr, headline_en,
               body_de, body_tr, body_en, image_url,
               cta_label_de, cta_label_tr, cta_label_en, cta_url,
-              starts_at, ends_at, is_active, priority,
+              starts_at, ends_at, is_active, priority, show_again_after_minutes,
               impression_count, click_count, created_at, updated_at
        FROM promotion_campaigns
        ORDER BY priority DESC, starts_at DESC`,
@@ -467,12 +590,12 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
          internal_name, headline_de, headline_tr, headline_en,
          body_de, body_tr, body_en, image_url,
          cta_label_de, cta_label_tr, cta_label_en, cta_url,
-         starts_at, ends_at, is_active, priority
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         starts_at, ends_at, is_active, priority, show_again_after_minutes
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING id, internal_name, headline_de, headline_tr, headline_en,
                  body_de, body_tr, body_en, image_url,
                  cta_label_de, cta_label_tr, cta_label_en, cta_url,
-                 starts_at, ends_at, is_active, priority,
+                 starts_at, ends_at, is_active, priority, show_again_after_minutes,
                  impression_count, click_count, created_at, updated_at`,
       [
         d.internalName.trim(),
@@ -491,6 +614,7 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
         t1.toISOString(),
         d.isActive,
         d.priority,
+        d.showAgainAfterMinutes,
       ],
     )
     return { campaign: mapPromotionCampaignRow(ins.rows[0]!) }
@@ -538,6 +662,7 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
     }
     if (d.isActive != null) add('is_active', d.isActive)
     if (d.priority != null) add('priority', d.priority)
+    if (d.showAgainAfterMinutes != null) add('show_again_after_minutes', d.showAgainAfterMinutes)
     parts.push('updated_at = now()')
     vals.push(id)
     await pool.query(`UPDATE promotion_campaigns SET ${parts.join(', ')} WHERE id = $${n}`, vals)
@@ -558,7 +683,7 @@ export async function registerAdminAndCuratedRoutes(app: FastifyInstance) {
       `SELECT id, internal_name, headline_de, headline_tr, headline_en,
               body_de, body_tr, body_en, image_url,
               cta_label_de, cta_label_tr, cta_label_en, cta_url,
-              starts_at, ends_at, is_active, priority,
+              starts_at, ends_at, is_active, priority, show_again_after_minutes,
               impression_count, click_count, created_at, updated_at
        FROM promotion_campaigns WHERE id = $1`,
       [id],

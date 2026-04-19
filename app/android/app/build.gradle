@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Alte transitive kotlin-stdlib-jdk7/jdk8 (z. B. von Cordova) kollidieren mit kotlin-stdlib 1.8+,
+// wo diese Klassen bereits enthalten sind.
+configurations.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute module('org.jetbrains.kotlin:kotlin-stdlib-jdk7') using module('org.jetbrains.kotlin:kotlin-stdlib:1.8.22') because 'merged into kotlin-stdlib'
+        substitute module('org.jetbrains.kotlin:kotlin-stdlib-jdk8') using module('org.jetbrains.kotlin:kotlin-stdlib:1.8.22') because 'merged into kotlin-stdlib'
+    }
+}
+
 android {
     namespace "com.ozturkyaser.yolarkadasim"
     compileSdk rootProject.ext.compileSdkVersion

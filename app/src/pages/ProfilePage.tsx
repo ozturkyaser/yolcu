@@ -7,6 +7,8 @@ import {
   createVignettePaypalCheckoutSession,
   createVignetteStripeCheckoutSession,
   fetchMyVignetteOrderRequests,
+  fetchProfileAi,
+  saveProfileAi,
   type MyVignetteOrderDto,
   type TollVehicleClass,
   type VehicleDto,
@@ -42,6 +44,11 @@ export function ProfilePage() {
   const [vignetteLoading, setVignetteLoading] = useState(false)
   const [vignettePayBusy, setVignettePayBusy] = useState<string | null>(null)
 
+  const [aiLoading, setAiLoading] = useState(true)
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiSystemPrompt, setAiSystemPrompt] = useState('')
+  const [aiIncludeFullContext, setAiIncludeFullContext] = useState(false)
+
   const searchQuery = useMemo(() => searchParams.toString(), [searchParams])
   const loc = localeForLang(lang)
 
@@ -71,6 +78,30 @@ export function ProfilePage() {
         setLoading(false)
       }
     })()
+  }, [token, t])
+
+  useEffect(() => {
+    if (!token) {
+      setAiLoading(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      setAiLoading(true)
+      try {
+        const d = await fetchProfileAi(token)
+        if (cancelled) return
+        setAiSystemPrompt(d.aiSystemPrompt ?? '')
+        setAiIncludeFullContext(d.aiIncludeFullContext)
+      } catch {
+        if (!cancelled) setMsg(t('profile_ai_load_error'))
+      } finally {
+        if (!cancelled) setAiLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [token, t])
 
   useEffect(() => {
@@ -227,6 +258,23 @@ export function ProfilePage() {
     }
   }
 
+  async function saveAiSettings() {
+    if (!token) return
+    setAiSaving(true)
+    setMsg(null)
+    try {
+      await saveProfileAi(token, {
+        aiSystemPrompt: aiSystemPrompt.trim() || null,
+        aiIncludeFullContext,
+      })
+      setMsg(t('profile_ai_saved'))
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : t('profile_ai_save_error'))
+    } finally {
+      setAiSaving(false)
+    }
+  }
+
   const primary = vehicles.find((x) => x.is_primary) ?? vehicles[0]
 
   return (
@@ -320,6 +368,48 @@ export function ProfilePage() {
           <option value="tr">{t('langOptionTr')}</option>
           <option value="en">{t('langOptionEn')}</option>
         </select>
+      </section>
+
+      <section className="mb-5 rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-on-surface">{t('profile_ai_section')}</h2>
+        <p className="mt-1 text-sm leading-relaxed text-on-surface-variant">{t('profile_ai_intro')}</p>
+        {aiLoading ? (
+          <p className="mt-4 text-sm text-on-surface-variant">{t('profile_loading')}</p>
+        ) : (
+          <>
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">
+              {t('profile_ai_prompt')}
+            </label>
+            <p className="mt-1 text-xs text-on-surface-variant">{t('profile_ai_prompt_hint')}</p>
+            <textarea
+              value={aiSystemPrompt}
+              onChange={(e) => setAiSystemPrompt(e.target.value)}
+              rows={5}
+              placeholder={t('profile_ai_prompt_ph')}
+              className="mt-2 w-full resize-y rounded-2xl border border-outline-variant/40 bg-surface px-3 py-2.5 text-sm"
+            />
+            <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={aiIncludeFullContext}
+                onChange={(e) => setAiIncludeFullContext(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-outline-variant accent-primary"
+              />
+              <span>
+                <span className="font-semibold text-on-surface">{t('profile_ai_full_ctx')}</span>
+                <span className="mt-0.5 block text-xs text-on-surface-variant">{t('profile_ai_full_ctx_hint')}</span>
+              </span>
+            </label>
+            <button
+              type="button"
+              disabled={aiSaving}
+              onClick={() => void saveAiSettings()}
+              className="mt-5 rounded-full bg-tertiary px-6 py-2.5 text-sm font-semibold text-on-tertiary disabled:opacity-50"
+            >
+              {aiSaving ? t('profile_saving') : t('profile_ai_save')}
+            </button>
+          </>
+        )}
       </section>
 
       <section className="mb-5 rounded-3xl border border-outline-variant/30 bg-surface-container-low/90 p-5 shadow-sm">
