@@ -6,7 +6,6 @@ export function AppBuildStamp() {
   const label = `v.${String(num).padStart(2, '0')}`
   const pkgVer = typeof __YOL_APP_VERSION__ !== 'undefined' ? __YOL_APP_VERSION__ : '0.0.0'
   const isDev = import.meta.env.DEV
-  const suffix = isDev ? ' · dev' : ''
 
   return (
     <div
@@ -16,13 +15,12 @@ export function AppBuildStamp() {
       }}
       title={
         isDev
-          ? `Lokal: Vite Dev (kein PWA-Cache) · Build ${label} · ${pkgVer}`
-          : `Produktion: Build ${label} · ${pkgVer} · Nach Deploy ggf. „Neu laden“ bei Update-Hinweis oder Seitendaten leeren.`
+          ? `Vite Dev · ${label} · ${pkgVer} (lokal; online nur gleiche Zahl, wenn VITE_APP_BUILD_NUMBER beim Build gesetzt)`
+          : `${label} · ${pkgVer}`
       }
       aria-hidden
     >
       {label}
-      {suffix}
     </div>
   )
 }
