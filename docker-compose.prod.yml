@@ -65,6 +65,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_APP_BUILD_NUMBER: ${VITE_APP_BUILD_NUMBER:-0}
+        # Root-Base: Deep-Links (/admin, …) laden beim ersten Aufruf; sonst brechen relative Asset-Pfade.
+        VITE_BASE: ${VITE_BASE:-/}
     restart: unless-stopped
     expose:
       - '80'

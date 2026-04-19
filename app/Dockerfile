@@ -2,7 +2,9 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 ARG VITE_APP_BUILD_NUMBER=0
+ARG VITE_BASE=/
 ENV VITE_APP_BUILD_NUMBER=$VITE_APP_BUILD_NUMBER
+ENV VITE_BASE=$VITE_BASE
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY index.html vite.config.ts tsconfig*.json ./

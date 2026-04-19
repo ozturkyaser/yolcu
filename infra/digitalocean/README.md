@@ -59,6 +59,8 @@ curl -sS https://app.deine-domain.de/api/health
 
 Web-App im Browser: `https://app.deine-domain.de`
 
+**Admin (`/admin`):** Der Produktions-Docker-Build setzt `VITE_BASE=/`, damit direkte Aufrufe wie `https://…/admin` die JS/CSS unter `/assets/…` laden. Ohne das (nur `./`) wirkt die Seite online oft „leer“ bei Deep-Links. Nach Änderungen am Web-Image: `docker compose … build --no-cache web` und Container neu starten.
+
 ### Nur HTTP (ohne Domain, z. B. `http://IP`)
 
 Let’s Encrypt braucht einen **Hostnamen**; mit reiner IP nutze das HTTP-Caddyfile und setze **`CORS_ORIGIN`** auf `http://DEINE_IP`:

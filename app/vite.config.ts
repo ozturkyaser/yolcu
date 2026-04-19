@@ -29,9 +29,16 @@ const pkg = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')) as
 const appVersion = String(pkg.version ?? '0.0.0')
 const buildNumber = resolveBuildNumber()
 
+/** Ohne `VITE_BASE`: `./` (Capacitor/file:-WebView). Web-Docker: `VITE_BASE=/`, sonst brechen Deep-Links (/admin) beim ersten Laden. */
+function resolveViteBase(): string {
+  const raw = process.env.VITE_BASE?.trim()
+  if (raw === undefined || raw === '') return './'
+  if (raw === '/' || raw === './') return raw
+  return raw.endsWith('/') ? raw : `${raw}/`
+}
+
 export default defineConfig({
-  /** Relativ für Capacitor / file:-WebView (Asset-Pfade). */
-  base: './',
+  base: resolveViteBase(),
   define: {
     __YOL_APP_VERSION__: JSON.stringify(appVersion),
     __YOL_BUILD_NUMBER__: JSON.stringify(buildNumber),
